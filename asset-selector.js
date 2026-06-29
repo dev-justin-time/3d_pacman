@@ -111,7 +111,7 @@ function createFloatingPellets(overlay) {
 
 function setupKeyboardNav(overlay) {
   function getAllFocusable() {
-    return [...overlay.querySelectorAll('.asset-tab, .toolbar-btn, .asset-card, .music-track-btn, .style-btn, .asset-start-btn, input[type="checkbox"]')]
+    return [...overlay.querySelectorAll('.asset-tab, .toolbar-btn, .asset-card, .music-track-btn, .style-btn, .control-mode-btn, .asset-start-btn, input[type="checkbox"]')]
       .filter(el => el.offsetParent !== null);
   }
   overlay.addEventListener('keydown', (e) => {
@@ -147,7 +147,7 @@ function setupKeyboardNav(overlay) {
       }
     }
   });
-  overlay.querySelectorAll('.asset-card, .style-btn').forEach(el => {
+  overlay.querySelectorAll('.asset-card, .style-btn, .control-mode-btn').forEach(el => {
     if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
   });
 }
@@ -302,8 +302,12 @@ function injectStyles() {
     .style-toggle-group { display: flex; gap: min(12px, 1.5vw); }
     .style-btn { flex: 1; background: #0d1b2a; border: 2px solid #1b2838; border-radius: 12px; padding: min(16px, 2vw) min(12px, 1.5vw); cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; align-items: center; gap: 6px; color: #8899aa; }
     .style-btn:hover { border-color: #3a6a9a; background: #121e30; }
-    .style-btn.active { border-color: #FFD700; background: linear-gradient(180deg, rgba(255, 215, 0, 0.08) 0%, #0d1b2a 100%); color: #FFD700; box-shadow: 0 0 16px rgba(255, 215, 0, 0.2); }
-    .style-btn:focus { outline: none; border-color: #88aacc; box-shadow: 0 0 0 2px rgba(136, 170, 204, 0.4); }
+    .style-btn.active { border-color: #FFD700; background: linear-gradient(180deg, rgba(255, 215, 0, 0.08) 0%, #0d1b2a 100%); color: #FFD700; box-shadow: 0 0 16px rgba(255, 215, 0, 0.2); }.style-btn:focus { 
+    outline: none; 
+    border-color: #88aacc; 
+    box-shadow: 0 0 0 2px rgba(136, 170, 204, 0.4); 
+}
+
     .style-btn-icon { font-size: clamp(24px, 5vw, 36px); }
     .style-btn-label { font-size: clamp(11px, 2vw, 15px); font-weight: bold; color: inherit; }
     .style-btn-desc { font-size: clamp(7px, 1.3vw, 10px); color: #6a7a8a; text-align: center; }
@@ -374,6 +378,13 @@ export function showAssetSelector(onStart) {
         <div class="style-toggle-group">
           <button class="style-btn ${prefs.style === 'legacy' ? 'active' : ''}" data-style="legacy"><span class="style-btn-icon">🟡</span><span class="style-btn-label">Legacy</span><span class="style-btn-desc">Classic sphere models, retro look</span></button>
           <button class="style-btn ${prefs.style === 'new' ? 'active' : ''}" data-style="new"><span class="style-btn-icon">🚀</span><span class="style-btn-label">New</span><span class="style-btn-desc">3D models, modern visuals</span></button>
+        </div>
+        <h2 class="section-title" style="margin-top:20px;">Controls</h2>
+        <p class="section-desc">Choose how to control Pac-Man on mobile</p>
+        <div class="style-toggle-group">
+          <button class="style-btn control-mode-btn ${prefs.controlMode === 'joystick' ? 'active' : ''}" data-control="joystick"><span class="style-btn-icon">🕹️</span><span class="style-btn-label">Joystick</span><span class="style-btn-desc">Virtual thumbstick on screen</span></button>
+          <button class="style-btn control-mode-btn ${prefs.controlMode === 'gyro' ? 'active' : ''}" data-control="gyro"><span class="style-btn-icon">📱</span><span class="style-btn-label">Tilt</span><span class="style-btn-desc">Tilt your phone to steer</span></button>
+          <button class="style-btn control-mode-btn ${prefs.controlMode === 'both' ? 'active' : ''}" data-control="both"><span class="style-btn-icon">🎮</span><span class="style-btn-label">Both</span><span class="style-btn-desc">Joystick + tilt together</span></button>
         </div>
         <h2 class="section-title" style="margin-top:min(20px,3vh);">Splash Screen Image</h2>
         <p style="color:#6a7a8a;font-size:clamp(9px,1.8vw,13px);margin:0 0 min(12px,1.5vh) 0;">Background image shown on the intro splash</p>
@@ -465,6 +476,15 @@ export function showAssetSelector(onStart) {
       overlay.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       prefsRef.style = btn.dataset.style;
+    });
+  });
+
+  // Control mode toggle buttons
+  overlay.querySelectorAll('.control-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.control-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      prefsRef.controlMode = btn.dataset.control;
     });
   });
 
@@ -560,7 +580,7 @@ function updateFontPreview(fontId) {
 function collectPreferences() {
   const musicToggle = document.getElementById('music-toggle');
   const sfxToggle = document.getElementById('sfx-toggle');
-  return { ...prefsRef, musicEnabled: musicToggle ? musicToggle.checked : true, sfxEnabled: sfxToggle ? sfxToggle.checked : true };
+  return { ...prefsRef, musicEnabled: musicToggle ? musicToggle.checked : true, sfxEnabled: sfxToggle ? sfxToggle.checked : true, controlMode: prefsRef.controlMode || 'both' };
 }
 
 export function isSelectorActive() { return selectorActive; }

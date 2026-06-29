@@ -45,6 +45,19 @@ const JOYSTICK_SPEED_MULTIPLIER = 1;
 /* Enable or disable debug printing of joystick info */
 const JOYSTICK_DEBUG = false;
 
+/* Enable gyroscope tilt controls on mobile? */
+/* @tweakable Enable gyroscope tilt controls on mobile */
+const ENABLE_GYRO = true;
+/* Gyroscope sensitivity (how much tilt maps to movement) */
+/* @tweakable Gyroscope tilt sensitivity (0.1 = subtle, 1.0 = very responsive) */
+const GYRO_SENSITIVITY = 0.5;
+/* Gyroscope deadzone - minimum tilt angle to register (degrees) */
+/* @tweakable Gyroscope deadzone in degrees */
+const GYRO_DEADZONE = 5;
+/* Gyroscope max tilt angle for full speed (degrees) */
+/* @tweakable Gyroscope max tilt angle for full speed (degrees) */
+const GYRO_MAX_TILT = 30;
+
 /* Maze walls opacity (0: invisible, 1: opaque) */
 /* @tweakable Maze walls opacity (0: invisible, 1: opaque) */
 const MAZE_OPACITY = 0.5;
@@ -920,6 +933,51 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                     });
                 };
                 if (overlay.parentElement) overlay.appendChild(signInBtn);
+        // iOS gyro permission prompt (standalone, not dependent on Puter)
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const gyroBtn = document.createElement('button');
+            gyroBtn.style.marginTop = upx(10) + 'px';
+            gyroBtn.style.fontFamily = LEGACY_NUMBER_FONT;
+            gyroBtn.style.fontSize = upx(9) + 'px';
+            gyroBtn.style.color = '#0d1b2a';
+            gyroBtn.style.background = 'linear-gradient(135deg, #88ff88, #55cc55)';
+            gyroBtn.style.border = '1px solid rgba(136,255,136,0.4)';
+            gyroBtn.style.borderRadius = upx(8) + 'px';
+            gyroBtn.style.padding = upx(8) + 'px ' + upx(16) + 'px';
+            gyroBtn.style.cursor = 'pointer';
+            gyroBtn.style.fontWeight = 'bold';
+            gyroBtn.style.textAlign = 'center';
+            gyroBtn.style.boxShadow = '0 2px 12px rgba(85,204,85,0.3)';
+            gyroBtn.style.transition = 'filter 0.2s, transform 0.2s';
+            gyroBtn.textContent = '\ud83d\udcf1 Enable Tilt Controls';
+            gyroBtn.onmouseenter = () => { gyroBtn.style.filter = 'brightness(1.15)'; gyroBtn.style.transform = 'scale(1.05)'; };
+            gyroBtn.onmouseleave = () => { gyroBtn.style.filter = ''; gyroBtn.style.transform = ''; };
+            gyroBtn.onclick = () => {
+                gyroBtn.textContent = 'Requesting...';
+                gyroBtn.disabled = true;
+                DeviceOrientationEvent.requestPermission().then(perm => {
+                    if (perm === 'granted') {
+                        gyroBtn.textContent = '\u2705 Tilt Controls Enabled';
+                        gyroBtn.style.background = 'rgba(136,255,136,0.15)';
+                        gyroBtn.style.color = '#88ff88';
+                        gyroBtn.style.border = '1px solid rgba(136,255,136,0.3)';
+                        gyroBtn.onclick = null;
+                        gyroBtn.onmouseenter = null;
+                        gyroBtn.onmouseleave = null;
+                    } else {
+                        gyroBtn.textContent = '\u274c Permission Denied';
+                        gyroBtn.style.color = '#ff8888';
+                        gyroBtn.style.cursor = 'default';
+                    }
+                }).catch(() => {
+                    gyroBtn.textContent = '\u274c Not Available';
+                    gyroBtn.style.color = '#ff8888';
+                    gyroBtn.style.cursor = 'default';
+                });
+            };
+            if (overlay.parentElement) overlay.appendChild(gyroBtn);
+        }
             }
         }).catch(() => {});
 
@@ -1296,6 +1354,8 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                     const model = gltf.scene;
                     // Scale model to match existing pacman size
                     model.scale.set(PACMAN_RADIUS * 2, PACMAN_RADIUS * 2, PACMAN_RADIUS * 2);
+                    // Rotate from Y-up (Sketchfab) to Z-up (game world)
+                    model.rotation.x = -Math.PI / 2;
                     model.position.copy(placeholder.position);
                     
                     // Copy properties
@@ -1967,7 +2027,42 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             }
             
             const keys = createKeyState();
-            var joystick = ENABLE_JOYSTICK ? new VirtualJoystick() : null;
+            var controlMode = assetPrefs.controlMode || 'both';
+            var joystick = (ENABLE_JOYSTICK && (controlMode === 'joystick' || controlMode === 'both' || !isMobileDevice())) ? new VirtualJoystick() : null;
+            var gyro = (ENABLE_GYRO && isMobileDevice() && (controlMode === 'gyro' || controlMode === 'both')) ? new GyroController() : null;
+            var touchJumpRequested = false;
+
+            // Create touch jump button for mobile devices
+            if (isMobileDevice()) {
+                const jumpBtn = document.createElement('button');
+                jumpBtn.id = 'touch-jump-btn';
+                jumpBtn.innerText = '\u2B06';
+                jumpBtn.style.position = 'fixed';
+                jumpBtn.style.right = upx(90) + 'px';
+                jumpBtn.style.bottom = upx(20) + 'px';
+                jumpBtn.style.width = upx(60) + 'px';
+                jumpBtn.style.height = upx(60) + 'px';
+                jumpBtn.style.borderRadius = '50%';
+                jumpBtn.style.background = 'rgba(255, 215, 0, 0.5)';
+                jumpBtn.style.border = '2px solid rgba(255, 215, 0, 0.8)';
+                jumpBtn.style.color = '#fff';
+                jumpBtn.style.fontSize = upx(24) + 'px';
+                jumpBtn.style.cursor = 'pointer';
+                jumpBtn.style.zIndex = '50';
+                jumpBtn.style.touchAction = 'none';
+                jumpBtn.style.userSelect = 'none';
+                jumpBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    touchJumpRequested = true;
+                }, { passive: false });
+                jumpBtn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    touchJumpRequested = false;
+                }, { passive: false });
+                jumpBtn.addEventListener('touchcancel', () => { touchJumpRequested = false; });
+                document.body.appendChild(jumpBtn);
+            }
+
             var renderer = createRenderer();
             rendererInstance = renderer; // Store the new renderer instance
             var scene = createScene();
@@ -2047,6 +2142,12 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             }
 
             // Remove old ghost indicator if it exists (from previous level)
+            // Clean up touch jump button from previous level
+            const oldJumpBtn = document.getElementById('touch-jump-btn');
+            if (oldJumpBtn) oldJumpBtn.remove();
+            // Clean up gyro controller from previous level
+            if (gyro && gyro.destroy) gyro.destroy();
+
             const oldIndicator = document.getElementById('ghost-indicator');
             if (oldIndicator) oldIndicator.remove();
 
@@ -2212,7 +2313,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             jumpIndicator.style.background = `rgba(0, 0, 0, ${JUMP_INDICATOR_BG_OPACITY})`;
             jumpIndicator.style.textShadow = '1px 1px 2px #000';
             jumpIndicator.style.fontFamily = LEGACY_NUMBER_FONT;
-            jumpIndicator.innerHTML = 'SPACE to Jump';
+            jumpIndicator.innerHTML = isMobileDevice() ? 'TAP ⬆ to Jump' : 'SPACE to Jump';
             document.body.appendChild(jumpIndicator);
 
             currentScore = 0;
@@ -2607,6 +2708,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                             }
                         }
                         lost = true;
+                        touchJumpRequested = false;
                         lostTime = now;
                         if (audioInitialized) {
                             deathSound.currentTime = 0; 
@@ -2630,9 +2732,16 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                     const ax = joystick.getAxis();
                     if (Math.abs(ax.forward) > 0.01) forward += ax.forward * JOYSTICK_SPEED_MULTIPLIER;
                     turn += ax.strafe * JOYSTICK_SPEED_MULTIPLIER * 2;
+
+                // Gyroscope tilt input
+                if (gyro && gyro.active) {
+                    const gax = gyro.getAxis();
+                    if (Math.abs(gax.forward) > 0.01) forward += gax.forward;
+                    if (Math.abs(gax.strafe) > 0.01) turn += gax.strafe * 2;
+                }
                 }
                 
-                if ((keys[' '] || keys['Spacebar']) && !pacman.isJumping && pacman.jumpCooldown <= 0) {
+                if ((keys[' '] ||keys[' '] || keys['Spacebar'] || touchJumpRequested) && !pacman.isJumping && pacman.jumpCooldown <= 0) {
                     pacman.isJumping = true;
                     pacman.jumpStartTime = now;
                     pacman.initialJumpRotation = pacman.rotation.z;
@@ -3111,5 +3220,151 @@ class VirtualJoystick {
             strafe: -this.value.x,
             magnitude: Math.sqrt(this.value.x * this.value.x + this.value.y * this.value.y)
         };
+    }
+}
+
+/**
+ * GyroController - uses DeviceOrientation API to map phone tilt to movement.
+ */
+class GyroController {
+    constructor() {
+        this.active = false;
+        this.value = { beta: 0, gamma: 0 };
+        this._baseline = { beta: null, gamma: null };
+        this._enabled = false;
+        this._onOrientation = (e) => {
+            if (!this._enabled) return;
+            if (e.beta == null || e.gamma == null) return;
+            if (this._baseline.beta === null) {
+                this._baseline.beta = e.beta;
+                this._baseline.gamma = e.gamma;
+            }
+            this.value.beta = e.beta - this._baseline.beta;
+            this.value.gamma = e.gamma - this._baseline.gamma;
+            const absBeta = Math.abs(this.value.beta);
+            const absGamma = Math.abs(this.value.gamma);
+            this.active = absBeta > GYRO_DEADZONE || absGamma > GYRO_DEADZONE;
+        };
+        this._tryStart();
+    }
+    async _tryStart() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const perm = await DeviceOrientationEvent.requestPermission();
+                if (perm === 'granted') this._enable();
+            } catch (e) {}
+        } else if (typeof DeviceOrientationEvent !== 'undefined') {
+            this._enable();
+        }
+    }
+    _enable() {
+        this._enabled = true;
+        window.addEventListener('deviceorientation', this._onOrientation, true);
+        this._onVisibility = () => {
+            if (!document.hidden) {
+                this._baseline.beta = null;
+                this._baseline.gamma = null;
+            }
+        };
+        document.addEventListener('visibilitychange', this._onVisibility);
+    }
+    getAxis() {
+        if (!this.active) return { forward: 0, strafe: 0 };
+        const maxTilt = GYRO_MAX_TILT;
+        const sens = GYRO_SENSITIVITY;
+        let forward = (this.value.beta / maxTilt) * sens;
+        let strafe = (this.value.gamma / maxTilt) * sens;
+        forward = Math.max(-1, Math.min(1, forward));
+        strafe = Math.max(-1, Math.min(1, strafe));
+        return { forward, strafe };
+    }
+    async requestPermission() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try {
+                const perm = await DeviceOrientationEvent.requestPermission();
+                if (perm === 'granted') { if (!this._enabled) this._enable(); return true; }
+            } catch (e) {}
+            return false;
+        }
+        return this._enabled;
+    }
+    destroy() {
+        this._enabled = false;
+        this.active = false;
+        window.removeEventListener('deviceorientation', this._onOrientation, true);
+        if (this._onVisibility) document.removeEventListener('visibilitychange', this._onVisibility);
+    }
+}
+/**
+ * SwipeController - Detects touch swipe gestures on mobile for directional input.
+ * Swipes are mapped to forward/strafe values matching the joystick/gyro interface.
+ */
+class SwipeController {
+    constructor(targetEl) {
+        this.active = true;
+        this._forward = 0;
+        this._strafe = 0;
+        this._target = targetEl || document.body;
+        this._startX = 0;
+        this._startY = 0;
+        this._swiping = false;
+        /* @tweakable Minimum swipe distance in pixels to register a direction */
+        this._minDistance = 30;
+        /* @tweakable How long a swipe input persists after gesture ends (ms) */
+        this._decayMs = 250;
+        this._decayTimer = null;
+
+        this._onTouchStart = (e) => {
+            if (!this.active) return;
+            const t = e.touches[0];
+            this._startX = t.clientX;
+            this._startY = t.clientY;
+            this._swiping = true;
+        };
+        this._onTouchMove = (e) => {
+            if (!this.active || !this._swiping) return;
+            e.preventDefault();
+            const t = e.touches[0];
+            const dx = t.clientX - this._startX;
+            const dy = t.clientY - this._startY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < this._minDistance) return;
+            // Normalize and map to forward/strafe
+            const ndx = dx / dist;
+            const ndy = dy / dist;
+            // Swipe up = forward (+1), down = backward (-1)
+            this._forward = -ndy;
+            // Swipe right = strafe negative (turn right), left = strafe positive (turn left)
+            this._strafe = -ndx;
+        };
+        this._onTouchEnd = () => {
+            this._swiping = false;
+            // Decay: keep the direction briefly so movement feels responsive
+            clearTimeout(this._decayTimer);
+            this._decayTimer = setTimeout(() => {
+                this._forward = 0;
+                this._strafe = 0;
+            }, this._decayMs);
+        };
+
+        this._target.addEventListener('touchstart', this._onTouchStart, { passive: true });
+        this._target.addEventListener('touchmove', this._onTouchMove, { passive: false });
+        this._target.addEventListener('touchend', this._onTouchEnd, { passive: true });
+        this._target.addEventListener('touchcancel', this._onTouchEnd, { passive: true });
+    }
+
+    getAxis() {
+        return { forward: this._forward, strafe: this._strafe };
+    }
+
+    destroy() {
+        this.active = false;
+        clearTimeout(this._decayTimer);
+        this._target.removeEventListener('touchstart', this._onTouchStart);
+        this._target.removeEventListener('touchmove', this._onTouchMove);
+        this._target.removeEventListener('touchend', this._onTouchEnd);
+        this._target.removeEventListener('touchcancel', this._onTouchEnd);
     }
 }

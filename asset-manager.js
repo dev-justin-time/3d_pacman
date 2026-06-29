@@ -293,7 +293,8 @@ const DEFAULT_PREFERENCES = {
   style: 'new',
   splashImage: 'loadingBack',
   musicEnabled: true,
-  sfxEnabled: true
+  sfxEnabled: true,
+  controlMode: 'both'
 };
 
 /**
