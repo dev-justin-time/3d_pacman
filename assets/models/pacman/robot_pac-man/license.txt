@@ -1,0 +1,11 @@
+Model Information:
+* title:	Robot Pac-man
+* source:	https://sketchfab.com/3d-models/robot-pac-man-0036752564974d04b81c034b2ed8a55a
+* author:	Xman (https://sketchfab.com/Xman85571)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Robot Pac-man" (https://sketchfab.com/3d-models/robot-pac-man-0036752564974d04b81c034b2ed8a55a) by Xman (https://sketchfab.com/Xman85571) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

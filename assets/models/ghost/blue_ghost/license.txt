@@ -1,0 +1,11 @@
+Model Information:
+* title:	Pac-man Blue ghost character
+* source:	https://sketchfab.com/3d-models/pac-man-blue-ghost-character-18f358ebac804244b0024a83ada68c85
+* author:	barriosanleum (https://sketchfab.com/barriosanleum)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Pac-man Blue ghost character" (https://sketchfab.com/3d-models/pac-man-blue-ghost-character-18f358ebac804244b0024a83ada68c85) by barriosanleum (https://sketchfab.com/barriosanleum) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

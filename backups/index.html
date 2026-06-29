@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ultimate 3D Pac-Man</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+        #lives {
+            position: fixed;
+            left: min(20px, 3vw);
+            top: min(15px, 2vh);
+            z-index: 10;
+            display: flex;
+            gap: min(8px, 1.2vw);
+        }
+        .life {
+            width: min(28px, 4vw);
+            height: min(28px, 4vw);
+            display: block;
+        }
+        /* SVG Pacman Life Styles */
+        .svg-life {
+            width: min(28px, 4vw);
+            height: min(28px, 4vw);
+        }
+    </style>
+</head>
+<body>
+    <div id="lives"></div>
+    <!-- Puter.js — cloud leaderboards, auth, AI ghosts (graceful fallback if unavailable) -->
+    <script src="https://js.puter.com/v2/"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/",
+          "./levels.js": "./levels.js",
+          "./pacman-multiplayer.js": "./pacman-multiplayer.js",
+          "./fruit.js": "./fruit.js",
+          "./puter-integration.js": "./puter-integration.js"
+        }
+      }
+    </script>
+    <!-- Main Pacman JS -->
+    <script type="module">
+      import './pacman.js';
+      import * as PacmanMP from './pacman-multiplayer.js';
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        // Multiplayer: use WebsimSocket if available (websim.ai), otherwise Puter rooms
+        if (typeof window.websim !== 'undefined' && window.WebsimSocket) {
+          let username = (await window.websim.getUser()).username;
+          let avatarUrl = `https://images.websim.ai/avatar/${username}`;
+          const room = new WebsimSocket();
+          PacmanMP.startMultiplayer(room, username, avatarUrl);
+        }
+        // Puter.js integration is handled inside pacman.js via the puter-integration module
+      });
+    </script>
+</body>
+</html>

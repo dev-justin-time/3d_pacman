@@ -1,0 +1,11 @@
+Model Information:
+* title:	Pacman (Candy Monsters)
+* source:	https://sketchfab.com/3d-models/pacman-candy-monsters-525543fbcd0a4a4e9be2040632c0c798
+* author:	packy films (https://sketchfab.com/packyfilms)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Pacman (Candy Monsters)" (https://sketchfab.com/3d-models/pacman-candy-monsters-525543fbcd0a4a4e9be2040632c0c798) by packy films (https://sketchfab.com/packyfilms) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
