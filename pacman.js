@@ -7,6 +7,27 @@ import * as Assets from './asset-manager.js';
 import * as AssetSelector from './asset-selector.js';
 import * as PuterIntegration from './puter-integration.js';
 
+// ─── UI Scaling (must be defined before any constant that calls upx()) ──
+
+/** Reference viewport dimension for scaling (600px = 1x scale) */
+const UI_REFERENCE = 600;
+
+/**
+ * Returns the current UI scale factor based on viewport size.
+ * Uses the smaller dimension for consistent results on landscape/portrait.
+ * Min 0.5 (tiny screens), Max 1.3 (large desktops).
+ */
+function getUIScale() {
+    return Math.min(1.3, Math.max(0.5, Math.min(window.innerWidth, window.innerHeight) / UI_REFERENCE));
+}
+
+/**
+ * Scale a pixel value by the current UI scale factor.
+ */
+function upx(px) {
+    return Math.round(px * getUIScale());
+}
+
 /* The virtual joystick's on-screen radius in pixels */
 /* @tweakable The virtual joystick's on-screen radius in pixels */
 const JOYSTICK_RADIUS = upx(48);
@@ -239,27 +260,6 @@ const PAUSE_BUTTON_COLOR = '#FFD700';
 const HIGH_SCORE_NAME_MAX_LENGTH = 3;
 /* Default high score name if none entered */
 const HIGH_SCORE_DEFAULT_NAME = 'AAA';
-
-// ─── UI Scaling ──────────────────────────────────────────────────────────
-
-/** Reference viewport dimension for scaling (600px = 1x scale) */
-const UI_REFERENCE = 600;
-
-/**
- * Returns the current UI scale factor based on viewport size.
- * Uses the smaller dimension for consistent results on landscape/portrait.
- * Min 0.5 (tiny screens), Max 1.3 (large desktops).
- */
-function getUIScale() {
-    return Math.min(1.3, Math.max(0.5, Math.min(window.innerWidth, window.innerHeight) / UI_REFERENCE));
-}
-
-/**
- * Scale a pixel value by the current UI scale factor.
- */
-function upx(px) {
-    return Math.round(px * getUIScale());
-}
 
 // Global audio initialization variables
 let audioInitialized = false;
