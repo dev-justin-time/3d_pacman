@@ -542,6 +542,8 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             const id = 'pacman-transient-text';
             let el = document.getElementById(id);
             if (!el) {
+                const txtFontDef = Assets.FONTS[assetPrefs.font];
+                const txtFontFamily = txtFontDef ? `'${txtFontDef.family}', monospace` : 'monospace';
                 el = document.createElement('div');
                 el.id = id;
                 el.style.position = 'fixed';
@@ -553,6 +555,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 el.style.textAlign = 'center';
                 el.style.padding = '8px 18px';
                 el.style.borderRadius = '10px';
+                el.style.fontFamily = txtFontFamily;
                 document.body.appendChild(el);
             }
             el.textContent = text;
@@ -618,6 +621,9 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         }
 
         const overlay = document.createElement('div');
+        const hsFontDef = Assets.FONTS[assetPrefs.font];
+        const hsFontFamily = hsFontDef ? `'${hsFontDef.family}', monospace` : 'monospace';
+
         overlay.id = 'highscore-entry-overlay';
         overlay.style.position = 'fixed';
         overlay.style.left = '0'; overlay.style.top = '0';
@@ -627,6 +633,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.style.display = 'flex';
         overlay.style.alignItems = 'center';
         overlay.style.justifyContent = 'center';
+        overlay.style.fontFamily = hsFontFamily;
 
         const box = document.createElement('div');
         box.style.background = '#111';
@@ -829,6 +836,9 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
      */
     function showCountdown(onComplete) {
         const overlay = document.createElement('div');
+        const cdFontDef = Assets.FONTS[assetPrefs.font];
+        const cdFontFamily = cdFontDef ? `'${cdFontDef.family}', monospace` : 'monospace';
+
         overlay.id = 'countdown-overlay';
         overlay.style.position = 'fixed';
         overlay.style.left = '0'; overlay.style.top = '0';
@@ -839,6 +849,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.style.alignItems = 'center';
         overlay.style.justifyContent = 'center';
         overlay.style.pointerEvents = 'none';
+        overlay.style.fontFamily = cdFontFamily;
 
         const num = document.createElement('div');
         num.style.fontSize = upx(120) + 'px';
@@ -879,6 +890,9 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
     }
 
     function showLevelSelector(onSelect) {
+        const fontDef = Assets.FONTS[assetPrefs.font];
+        const fontFamily = fontDef ? `'${fontDef.family}', monospace` : 'monospace';
+
         const overlay = document.createElement('div');
         overlay.style.position = 'fixed';
         overlay.style.left = '0'; overlay.style.top = '0';
@@ -888,6 +902,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.style.display = 'flex';
         overlay.style.alignItems = 'center';
         overlay.style.justifyContent = 'center';
+        overlay.style.fontFamily = fontFamily;
 
         const box = document.createElement('div');
         box.style.background = '#111';
@@ -1132,6 +1147,11 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         var renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setClearColor('black', 1.0);
         renderer.setSize(window.innerWidth, window.innerHeight);
+        // Ensure the canvas is behind all HUD overlays
+        renderer.domElement.style.position = 'fixed';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        renderer.domElement.style.zIndex = '0';
         document.body.appendChild(renderer.domElement);
         return renderer;
     }
@@ -1453,6 +1473,9 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         if (existing) existing.remove();
 
         const overlay = document.createElement('div');
+        const goFontDef = Assets.FONTS[assetPrefs.font];
+        const goFontFamily = goFontDef ? `'${goFontDef.family}', monospace` : 'monospace';
+
         overlay.id = "play-again-overlay";
         overlay.style.position = 'fixed';
         overlay.style.left = 0;
@@ -1464,6 +1487,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.style.justifyContent = 'center';
         overlay.style.background = `rgba(0,0,0,${PLAY_AGAIN_OVERLAY_OPACITY})`;
         overlay.style.zIndex = 2000;
+        overlay.style.fontFamily = goFontFamily;
         overlay.style.flexDirection = 'column';
         overlay.style.overflow = 'auto';
 
@@ -1813,9 +1837,15 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         function startLevel(levelIndex) {
             // Clear AI ghost strategy cache when starting a new level
             PuterIntegration.clearAIGhostCache();
-            // If a renderer from a previous level exists, remove its DOM element
-            if (rendererInstance && rendererInstance.domElement && rendererInstance.domElement.parentElement) {
-                rendererInstance.domElement.remove();
+            // If a renderer from a previous level exists, clean up
+            if (rendererInstance) {
+                // Remove old resize listener to prevent stacking
+                if (rendererInstance._onResize) {
+                    window.removeEventListener('resize', rendererInstance._onResize);
+                }
+                if (rendererInstance.domElement && rendererInstance.domElement.parentElement) {
+                    rendererInstance.domElement.remove();
+                }
             }
             currentLevelIndex = levelIndex;
             
@@ -1843,6 +1873,17 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             camera.targetPosition = new THREE.Vector3();
             camera.targetLookAt = new THREE.Vector3();
             camera.lookAtPosition = new THREE.Vector3();
+
+            // Handle window resize: update renderer and camera
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+            window.addEventListener('resize', onWindowResize);
+            // Store reference for cleanup when starting next level
+            renderer._onResize = onWindowResize;
+
             var hudCamera = createHudCamera(map);
             var pacman = createPacman(scene, map.pacmanSpawn);
             var ghostSpawnTime = -GHOST_RESPAWN_TIME;

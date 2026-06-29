@@ -19,31 +19,34 @@ All fonts are loaded via `@font-face` in `asset-manager.js` and applied dynamica
 
 ### Font Samples
 
+> **Live Preview:** Open [`font-preview.html`](font-preview.html) in your browser to see all fonts rendered with their actual typefaces.
+
 Each font renders this sample text:
 
 ```
-0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ
+PAC-MAN 3D
 SCORE: 10000  HIGH: 99999
 GAME OVER
+0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ
 ```
 
 #### Pacfont ZEBZ
 ```
- font-family: 'Pacfont-ZEBZ', monospace;
+font-family: 'Pacfont-ZEBZ', monospace;
 ```
-> Classic Pac-Man arcade font with characteristic cut-out letterforms. The default game font.
+> Classic Pac-Man arcade font with characteristic cut-out letterforms. The default game font. Used for: title screens, main HUD.
 
 #### Pacfont Good
 ```
 font-family: 'PacfontGood', monospace;
 ```
-> A refined variant of the Pac-Man font with cleaner edges and better readability.
+> A refined variant of the Pac-Man font with cleaner edges and better readability. Used for: score display, menus.
 
 #### Fantasmytas St
 ```
 font-family: 'Fantasmytas', monospace;
 ```
-> Playful rounded display font with whimsical character shapes. Great for celebrations.
+> Playful rounded display font with whimsical character shapes. Great for celebrations and fun overlays.
 
 #### Press Start 2P
 ```
