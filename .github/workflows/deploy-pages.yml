@@ -29,7 +29,7 @@ jobs:
       - name: Prepare deploy files
         run: |
           mkdir _deploy
-          cp index.html _deploy/
+          cp *.html _deploy/
           cp *.js _deploy/
           cp -r assets _deploy/
           cp puter-app-icon.png _deploy/
