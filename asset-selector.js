@@ -114,7 +114,7 @@ export function showAssetSelector(onStart) {
         <h2 class="section-title" style="margin-top:min(20px,3vh);">Splash Screen Image</h2>
         <p style="color:#888;font-size:min(0.85em,2.5vw);margin:0 0 min(12px,1.5vh) 0;">Background image shown on the intro splash</p>
         <div class="asset-grid asset-grid-small" id="splash-image-grid"></div>
-      </div>`;
+      </div>
 
       <!-- Start Button -->
       <button id="asset-start-btn" class="asset-start-btn">▶ START GAME</button>
