@@ -16,7 +16,7 @@ A fully-featured 3D Pac-Man game built with Three.js and Puter.js — featuring 
 - **Ghost AI** — ghosts use chase, ambush, scatter, and patrol strategies
 - **AI-powered ghosts** — when connected to Puter, ghosts use GPT-4o-mini to make smarter decisions
 - **Level progression** — unlock levels as you master them, with challenge levels every 5th stage
-- **Extra life system** — earn bonus lives at score milestones (every 10,000 pts)
+- **Extra life system** — earn bonus lives at score milestones (every 10,000 pts, 20,000 after level 50)
 
 ### Customization (Asset Selector)
 - **13 Pac-Man models** — classic sphere, Yellow, Robot, Girl, Pixel, Rock 'n Roll, and more
@@ -45,6 +45,10 @@ A fully-featured 3D Pac-Man game built with Three.js and Puter.js — featuring 
 - **Virtual joystick** for touch-screen movement
 - **Responsive UI scaling** adapts to any screen size
 - **Device-adaptive** loading screens and layouts
+
+### Accessibility
+- **Full keyboard navigation** in the asset selector — arrow keys, Enter/Space to select, Escape to close, number keys 1-5 for tab switching
+- **Reduced motion support** — respects `prefers-reduced-motion` system setting, disabling animations and particle effects
 
 ---
 
@@ -87,7 +91,7 @@ A fully-featured 3D Pac-Man game built with Three.js and Puter.js — featuring 
 
 ## 🚀 Running Locally
 
-No build step needed — just serve the files with any static HTTP server:
+No build step needed — just serve the files with any static HTTP server. Note: Puter features (cloud leaderboards, AI ghosts, authentication) require HTTP serving and will not work from `file://` protocol.
 
 ```bash
 # Using Python
