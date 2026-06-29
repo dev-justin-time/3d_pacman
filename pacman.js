@@ -134,6 +134,9 @@ const HUD_OBJECT_SCALE = 2.5;
 /* Score text color */
 const SCORE_COLOR = '#FFD700';
 
+/* Legacy arcade font for numbers — always Press Start 2P regardless of selected font */
+const LEGACY_NUMBER_FONT = "'Press Start 2P', monospace";
+
 /* How long text messages are visible on the screen (ms) */
 /* @tweakable How long the 'You died' or 'Game Over' overlay message is displayed (ms) */
 const TEXT_DISPLAY_DURATION = 2200;
@@ -545,8 +548,6 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             const id = 'pacman-transient-text';
             let el = document.getElementById(id);
             if (!el) {
-                const txtFontDef = Assets.FONTS[assetPrefs.font];
-                const txtFontFamily = txtFontDef ? `'${txtFontDef.family}', monospace` : 'monospace';
                 el = document.createElement('div');
                 el.id = id;
                 el.style.position = 'fixed';
@@ -558,7 +559,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 el.style.textAlign = 'center';
                 el.style.padding = '8px 18px';
                 el.style.borderRadius = '10px';
-                el.style.fontFamily = txtFontFamily;
+                el.style.fontFamily = LEGACY_NUMBER_FONT;
                 document.body.appendChild(el);
             }
             el.textContent = text;
@@ -624,8 +625,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         }
 
         const overlay = document.createElement('div');
-        const hsFontDef = Assets.FONTS[assetPrefs.font];
-        const hsFontFamily = hsFontDef ? `'${hsFontDef.family}', monospace` : 'monospace';
+        const hsFontFamily = LEGACY_NUMBER_FONT;
 
         overlay.id = 'highscore-entry-overlay';
         overlay.style.position = 'fixed';
@@ -839,8 +839,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
      */
     function showCountdown(onComplete) {
         const overlay = document.createElement('div');
-        const cdFontDef = Assets.FONTS[assetPrefs.font];
-        const cdFontFamily = cdFontDef ? `'${cdFontDef.family}', monospace` : 'monospace';
+        const cdFontFamily = LEGACY_NUMBER_FONT;
 
         overlay.id = 'countdown-overlay';
         overlay.style.position = 'fixed';
@@ -893,8 +892,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
     }
 
     function showLevelSelector(onSelect) {
-        const fontDef = Assets.FONTS[assetPrefs.font];
-        const fontFamily = fontDef ? `'${fontDef.family}', monospace` : 'monospace';
+        const fontFamily = LEGACY_NUMBER_FONT;
 
         const overlay = document.createElement('div');
         overlay.style.position = 'fixed';
@@ -1476,8 +1474,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         if (existing) existing.remove();
 
         const overlay = document.createElement('div');
-        const goFontDef = Assets.FONTS[assetPrefs.font];
-        const goFontFamily = goFontDef ? `'${goFontDef.family}', monospace` : 'monospace';
+        const goFontFamily = LEGACY_NUMBER_FONT;
 
         overlay.id = "play-again-overlay";
         overlay.style.position = 'fixed';
@@ -1723,6 +1720,67 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         loadingMsg.style.animation = 'loadingpulse 1.5s ease-in-out infinite';
 
         document.body.appendChild(loading);
+
+        // Initialize Puter auth before game start (non-blocking)
+        PuterIntegration.getCurrentUser().then(user => {
+            if (user && user.username) {
+                const puterBadge = document.createElement('div');
+                puterBadge.style.zIndex = '2';
+                puterBadge.style.marginTop = upx(10) + 'px';
+                puterBadge.style.fontFamily = LEGACY_NUMBER_FONT;
+                puterBadge.style.fontSize = upx(10) + 'px';
+                puterBadge.style.color = '#88ccff';
+                puterBadge.style.textAlign = 'center';
+                puterBadge.textContent = `☁️ Signed in as ${user.username}`;
+                if (loading.parentElement) loading.appendChild(puterBadge);
+            } else if (PuterIntegration.isPuterAvailable()) {
+                // Not signed in but Puter is loaded — show a Sign in button for cloud leaderboards & AI ghosts
+                const signInBtn = document.createElement('button');
+                signInBtn.style.zIndex = '2';
+                signInBtn.style.marginTop = upx(12) + 'px';
+                signInBtn.style.fontFamily = LEGACY_NUMBER_FONT;
+                signInBtn.style.fontSize = upx(9) + 'px';
+                signInBtn.style.color = '#0d1b2a';
+                signInBtn.style.background = 'linear-gradient(135deg, #88ccff, #55aaee)';
+                signInBtn.style.border = '1px solid rgba(136,204,255,0.4)';
+                signInBtn.style.borderRadius = upx(8) + 'px';
+                signInBtn.style.padding = upx(8) + 'px ' + upx(16) + 'px';
+                signInBtn.style.cursor = 'pointer';
+                signInBtn.style.fontWeight = 'bold';
+                signInBtn.style.textAlign = 'center';
+                signInBtn.style.boxShadow = '0 2px 12px rgba(85,170,238,0.3)';
+                signInBtn.style.transition = 'filter 0.2s, transform 0.2s';
+                signInBtn.textContent = '☁️ Sign in with Puter';
+                signInBtn.onmouseenter = () => { signInBtn.style.filter = 'brightness(1.15)'; signInBtn.style.transform = 'scale(1.05)'; };
+                signInBtn.onmouseleave = () => { signInBtn.style.filter = ''; signInBtn.style.transform = ''; };
+                signInBtn.onclick = () => {
+                    signInBtn.textContent = 'Signing in...';
+                    signInBtn.style.cursor = 'wait';
+                    signInBtn.disabled = true;
+                    PuterIntegration.signIn().then(signedUser => {
+                        if (signedUser && signedUser.username) {
+                            signInBtn.textContent = `☁️ Signed in as ${signedUser.username}`;
+                            signInBtn.style.cursor = 'default';
+                            signInBtn.style.background = 'rgba(136,204,255,0.15)';
+                            signInBtn.style.color = '#88ccff';
+                            signInBtn.style.border = '1px solid rgba(136,204,255,0.3)';
+                            signInBtn.onclick = null;
+                            signInBtn.onmouseenter = null;
+                            signInBtn.onmouseleave = null;
+                        } else {
+                            signInBtn.textContent = '☁️ Sign in with Puter';
+                            signInBtn.style.cursor = 'pointer';
+                            signInBtn.disabled = false;
+                        }
+                    }).catch(() => {
+                        signInBtn.textContent = '☁️ Sign in with Puter';
+                        signInBtn.style.cursor = 'pointer';
+                        signInBtn.disabled = false;
+                    });
+                };
+                if (loading.parentElement) loading.appendChild(signInBtn);
+            }
+        }).catch(() => {});
 
         // Play intro sound
         try {
@@ -2080,15 +2138,12 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             scoreDisplay.style.right = upx(20) + 'px';
             scoreDisplay.style.top = upx(15) + 'px';
             scoreDisplay.style.zIndex = '10';
-            // Apply selected font to score display
-            const fontDef = Assets.FONTS[assetPrefs.font];
-            const fontFamily = fontDef ? `'${fontDef.family}', monospace` : 'monospace';
-            
+            // Score display always uses legacy arcade font for numbers
             scoreDisplay.style.color = SCORE_COLOR;
             scoreDisplay.style.fontSize = SCORE_FONT_SIZE + 'px';
             scoreDisplay.style.fontWeight = 'bold';
             scoreDisplay.style.textShadow = '2px 2px 4px #000';
-            scoreDisplay.style.fontFamily = fontFamily;
+            scoreDisplay.style.fontFamily = LEGACY_NUMBER_FONT;
             scoreDisplay.innerHTML = 'SCORE: 0';
             document.body.appendChild(scoreDisplay);
 
@@ -2105,7 +2160,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             jumpIndicator.style.borderRadius = '5px';
             jumpIndicator.style.background = `rgba(0, 0, 0, ${JUMP_INDICATOR_BG_OPACITY})`;
             jumpIndicator.style.textShadow = '1px 1px 2px #000';
-            jumpIndicator.style.fontFamily = fontFamily;
+            jumpIndicator.style.fontFamily = LEGACY_NUMBER_FONT;
             jumpIndicator.innerHTML = 'SPACE to Jump';
             document.body.appendChild(jumpIndicator);
 

@@ -382,10 +382,13 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
   // Extract just the filename for the bin
   const binFilename = binPath.replace(/\\/g, '/').split('/').pop();
 
+  // Extract just the filename for loader.load() calls (avoid double-path when loader.path is set)
+  const gltfFilename = fullPath.replace(/\\/g, '/').split('/').pop();
+
   // Save and restore previous loader path to avoid race conditions between concurrent model loads
   const previousPath = loader._currentPath || loader.path || '';
 
-  // Helper to set loader path for this model
+  // Helper to set loader path for this model (for texture resolution)
   function setModelPath() {
     if (directory) {
       loader.setPath(directory);
@@ -415,25 +418,17 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
         }
       }
 
-      // Set the base path so textures resolve relative to the original GLTF directory
-      setModelPath();
-
       if (needsPatch) {
-        // Serialize modified JSON to a blob and load from it
-        const blob = new Blob([JSON.stringify(gltfJson)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        loader.load(url, function(gltf) {
-          // Revoke blob URL after a microtask to let THREE.js finish reading
-          setTimeout(function() { URL.revokeObjectURL(url); }, 100);
+        // Use loader.parse() with patched JSON — avoids blob URL path-prepending issues
+        // and passes `directory` as resourcePath for texture resolution
+        loader.parse(JSON.stringify(gltfJson), directory, function(gltf) {
           loader.setPath(previousPath);
           onLoad(gltf);
-        }, onProgress, function(err) {
-          setTimeout(function() { URL.revokeObjectURL(url); }, 100);
-          loader.setPath(previousPath);
-          // Fallback: try direct load with the patched approach via re-fetch
-          console.warn('Blob load failed, trying direct load with same path:', err);
+        }, function(err) {
+          console.warn('Parse load failed, trying direct load:', err);
+          // Fallback: direct load with just the filename (loader.path is set for texture resolution)
           setModelPath();
-          loader.load(fullPath, function(gltf) {
+          loader.load(gltfFilename, function(gltf) {
             loader.setPath(previousPath);
             onLoad(gltf);
           }, onProgress, function(err2) {
@@ -442,8 +437,9 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
           });
         });
       } else {
-        // No patch needed, load directly
-        loader.load(fullPath, function(gltf) {
+        // No patch needed — set path for texture resolution, load by filename only
+        setModelPath();
+        loader.load(gltfFilename, function(gltf) {
           loader.setPath(previousPath);
           onLoad(gltf);
         }, onProgress, function(err) {
@@ -455,7 +451,7 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
     .catch(function(err) {
       console.warn('Fetch-based model loading failed, trying direct load:', err);
       setModelPath();
-      loader.load(fullPath, function(gltf) {
+      loader.load(gltfFilename, function(gltf) {
         loader.setPath(previousPath);
         onLoad(gltf);
       }, onProgress, function(err2) {

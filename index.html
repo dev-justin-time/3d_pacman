@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Ultimate 3D Pac-Man</title>
+    <link rel="icon" href="assets/images/icon/pac-man-classic.jpg" type="image/jpeg">
     <style>
         body {
             margin: 0;
@@ -33,6 +34,7 @@
 <body>
     <div id="lives"></div>
     <!-- Puter.js — cloud leaderboards, auth, AI ghosts (graceful fallback if unavailable) -->
+    <script>if (typeof puter === 'undefined') window.puter = {}; puter.quiet = true;</script>
     <script src="https://js.puter.com/v2/"></script>
     <script type="importmap">
       {
