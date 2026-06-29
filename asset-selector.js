@@ -7,17 +7,109 @@
  *   - Font family
  *   - Start Game button
  *
+ * Features: particle effects, animated background, card flip animation,
+ * sound preview, sticky header, compact mode, drag-to-reorder, grouped sections.
+ *
  * Import as: import * as AssetSelector from './asset-selector.js'
  * Usage:     AssetSelector.showAssetSelector((prefs) => { ... start game ... })
  */
 
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as Assets from './asset-manager.js';
 
 let selectorActive = false;
 let mainMenuShown = false;
-
-// Which section (tab) is currently visible
 let activeSection = 'pacman';
+
+// ── 3D Model Thumbnail Renderer ────────────────────────────────────────
+
+let _thumbRenderer = null;
+let _thumbScene = null;
+let _thumbCamera = null;
+let _thumbLoader = null;
+const _thumbCache = {};
+const THUMB_SIZE = 128;
+
+function getThumbRenderer() {
+  if (_thumbRenderer) return _thumbRenderer;
+  _thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  _thumbRenderer.setSize(THUMB_SIZE, THUMB_SIZE);
+  _thumbRenderer.setClearColor(0x000000, 0);
+  _thumbScene = new THREE.Scene();
+  _thumbScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(2, 3, 4);
+  _thumbScene.add(dirLight);
+  const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  dirLight2.position.set(-2, -1, -3);
+  _thumbScene.add(dirLight2);
+  _thumbCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  _thumbLoader = new GLTFLoader();
+  return _thumbRenderer;
+}
+
+function disposeThumbScene() {
+  if (!_thumbScene) return;
+  const toRemove = [];
+  _thumbScene.traverse(obj => {
+    if (obj.isMesh) {
+      toRemove.push(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => {
+          if (m.map) m.map.dispose();
+          m.dispose();
+        });
+      }
+    }
+  });
+  toRemove.forEach(obj => _thumbScene.remove(obj));
+}
+
+function renderModelThumbnail(modelPath) {
+  return new Promise((resolve) => {
+    if (_thumbCache[modelPath]) {
+      resolve(_thumbCache[modelPath]);
+      return;
+    }
+    const renderer = getThumbRenderer();
+    Assets.loadSketchfabModel(modelPath, _thumbLoader, (gltf) => {
+      disposeThumbScene();
+      const model = gltf.scene;
+      // Center and fit model
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = 1.5 / maxDim;
+      model.scale.setScalar(scale);
+      model.position.sub(center.multiplyScalar(scale));
+      _thumbScene.add(model);
+      // Position camera
+      _thumbCamera.position.set(0, 0.5, 2.5);
+      _thumbCamera.lookAt(0, 0, 0);
+      renderer.render(_thumbScene, _thumbCamera);
+      const dataUrl = renderer.domElement.toDataURL('image/png');
+      _thumbCache[modelPath] = dataUrl;
+      resolve(dataUrl);
+    }, undefined, () => {
+      resolve(null);
+    });
+  });
+}
+
+function cleanupThumbRenderer() {
+  disposeThumbScene();
+  if (_thumbRenderer) {
+    _thumbRenderer.dispose();
+    _thumbRenderer = null;
+    _thumbScene = null;
+    _thumbCamera = null;
+    _thumbLoader = null;
+  }
+}
 
 /** Color gradients for each pacman model card */
 const PACMAN_CARD_STYLES = {
@@ -45,15 +137,138 @@ const GHOST_CARD_STYLES = {
   candy:    { gradient: 'linear-gradient(135deg, #FFD740 0%, #FF6D00 100%)', emoji: '🍬', bg: '#2a1a00' },
 };
 
+/** Group definitions for model cards */
+const PACMAN_GROUPS = [
+  { id: 'builtin', label: 'Classic / Built-in', ids: ['classic'] },
+  { id: 'official', label: '3D Models', ids: ['yellow', 'robo', 'girl', 'pixel', 'rockin', 'pacManExtract', 'robotPac'] },
+  { id: 'crossover', label: 'Crossover Characters', ids: ['pinkyPac', 'inkyPac', 'bluePac', 'candyPac', 'pinkyExtract'] },
+];
+const GHOST_GROUPS = [
+  { id: 'builtin', label: 'Classic / Built-in', ids: ['classic'] },
+  { id: 'official', label: '3D Ghost Models', ids: ['inky', 'blueGhost', 'pinky', 'candy'] },
+];
+
+// ── Particle System ─────────────────────────────────────────────────────
+
 /**
- * Inject the stylesheet for the asset selector.
- * Only injects once per page load.
+ * Spawn gold sparkle particles at a card's position.
  */
+function spawnParticles(card) {
+  const rect = card.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  for (let i = 0; i < 12; i++) {
+    const p = document.createElement('div');
+    p.className = 'sparkle-particle';
+    const angle = (Math.PI * 2 * i) / 12 + (Math.random() - 0.5) * 0.5;
+    const dist = 30 + Math.random() * 40;
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist;
+    const size = 4 + Math.random() * 6;
+    p.style.cssText = `
+      position:fixed; left:${cx}px; top:${cy}px;
+      width:${size}px; height:${size}px;
+      background: radial-gradient(circle, #FFD700, #FFA500);
+      border-radius: 50%;
+      pointer-events: none; z-index: 10000;
+      box-shadow: 0 0 ${size}px rgba(255,215,0,0.8);
+      animation: sparkle-fly 0.6s ease-out forwards;
+      --dx: ${dx}px; --dy: ${dy}px;
+    `;
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 700);
+  }
+}
+
+// ── Animated Background (Floating Pellets) ──────────────────────────────
+
+/**
+ * Create floating dot/pellet particles in the overlay background.
+ */
+function createFloatingPellets(overlay) {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'floating-pellets-canvas';
+  canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+  overlay.insertBefore(canvas, overlay.firstChild);
+
+  const ctx = canvas.getContext('2d');
+  let pellets = [];
+  let animId = null;
+
+  function resize() {
+    canvas.width = overlay.offsetWidth;
+    canvas.height = overlay.offsetHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Create pellets
+  for (let i = 0; i < 25; i++) {
+    pellets.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: 2 + Math.random() * 3,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: -0.2 - Math.random() * 0.3,
+      alpha: 0.15 + Math.random() * 0.25,
+      pulse: Math.random() * Math.PI * 2,
+    });
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of pellets) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.pulse += 0.02;
+      if (p.y < -10) { p.y = canvas.height + 10; p.x = Math.random() * canvas.width; }
+      if (p.x < -10) p.x = canvas.width + 10;
+      if (p.x > canvas.width + 10) p.x = -10;
+      const a = p.alpha * (0.6 + 0.4 * Math.sin(p.pulse));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 215, 0, ${a})`;
+      ctx.fill();
+      // Glow
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 215, 0, ${a * 0.2})`;
+      ctx.fill();
+    }
+    animId = requestAnimationFrame(animate);
+  }
+  animate();
+
+  // Cleanup function
+  return () => {
+    cancelAnimationFrame(animId);
+    window.removeEventListener('resize', resize);
+  };
+}
+
+// ── Styles ──────────────────────────────────────────────────────────────
+
 function injectStyles() {
   if (document.getElementById('asset-selector-styles')) return;
   const style = document.createElement('style');
   style.id = 'asset-selector-styles';
   style.textContent = `
+    /* ── Keyframes ─────────────────────────────────────── */
+    @keyframes assetFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes sparkle-fly {
+      0% { transform: translate(0,0) scale(1); opacity: 1; }
+      100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+    }
+    @keyframes card-wobble {
+      0% { transform: perspective(600px) rotateY(0deg); }
+      25% { transform: perspective(600px) rotateY(6deg); }
+      75% { transform: perspective(600px) rotateY(-6deg); }
+      100% { transform: perspective(600px) rotateY(0deg); }
+    }
+
     /* ── Overlay ──────────────────────────────────────── */
     .asset-selector-overlay {
       position: fixed;
@@ -71,13 +286,10 @@ function injectStyles() {
       opacity: 0;
       transition: opacity 0.4s ease;
     }
-    @keyframes assetFadeIn {
-      from { opacity: 0; }
-      to   { opacity: 1; }
-    }
 
     /* ── Container ────────────────────────────────────── */
     .asset-selector-container {
+      position: relative;
       width: min(95vw, 700px);
       max-height: 92vh;
       overflow-y: auto;
@@ -87,6 +299,7 @@ function injectStyles() {
       padding: min(24px, 3vw) min(20px, 2.5vw);
       box-shadow: 0 0 60px rgba(0, 100, 255, 0.15), 0 4px 30px rgba(0,0,0,0.8);
       color: #e0e0e0;
+      z-index: 1;
     }
     .asset-selector-container::-webkit-scrollbar {
       width: 6px;
@@ -96,10 +309,14 @@ function injectStyles() {
       border-radius: 3px;
     }
 
-    /* ── Header ───────────────────────────────────────── */
+    /* ── Sticky Header ────────────────────────────────── */
     .asset-selector-header {
       text-align: center;
       margin-bottom: min(20px, 2.5vh);
+      text-align: center;
+      margin-bottom: min(20px, 2.5vh);
+      padding: min(12px, 1.5vh) 0;
+      background: linear-gradient(180deg, #0d1b2a 0%, #0d1b2a 80%, transparent 100%);
     }
     .asset-selector-title {
       font-size: clamp(24px, 6vw, 48px);
@@ -115,13 +332,44 @@ function injectStyles() {
       letter-spacing: 2px;
     }
 
-    /* ── Tabs ──────────────────────────────────────────── */
+    /* ── Toolbar (compact mode toggle) ────────────────── */
+    .asset-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .toolbar-btn {
+      padding: 4px 10px;
+      border: 1px solid #1b2838;
+      border-radius: 6px;
+      background: #0d1b2a;
+      color: #8899aa;
+      font-family: inherit;
+      font-size: clamp(7px, 1.2vw, 10px);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .toolbar-btn:hover {
+      border-color: #3a6a9a;
+      color: #b0c0d0;
+    }
+    .toolbar-btn.active {
+      border-color: #FFD700;
+      color: #FFD700;
+    }
+
+    /* ── Tabs (sticky below header) ───────────────────── */
     .asset-selector-tabs {
+      position: sticky;
+      top: 0;
+      z-index: 99;
       display: flex;
       gap: 4px;
       margin-bottom: min(16px, 2vh);
       overflow-x: auto;
-      padding-bottom: 4px;
+      padding: 8px 0;
+      background: linear-gradient(180deg, #0d1b2a 0%, #0d1b2a 80%, transparent 100%);
     }
     .asset-tab {
       flex: 1;
@@ -163,6 +411,19 @@ function injectStyles() {
       letter-spacing: 1px;
     }
 
+    /* ── Group Label ──────────────────────────────────── */
+    .group-label {
+      font-size: clamp(9px, 1.5vw, 12px);
+      color: #4a6a8a;
+      margin: 12px 0 6px 0;
+      padding-left: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .group-label:first-child {
+      margin-top: 0;
+    }
+
     /* ── Asset Grid ───────────────────────────────────── */
     .asset-grid {
       display: grid;
@@ -171,6 +432,28 @@ function injectStyles() {
     }
     .asset-grid-small {
       grid-template-columns: repeat(auto-fill, minmax(min(100px, 28vw), 1fr));
+    }
+    /* Compact mode */
+    .asset-selector-container.compact .asset-grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(200px, 60vw), 1fr));
+    }
+    .asset-selector-container.compact .asset-card {
+      flex-direction: row;
+      padding: 8px 12px;
+      gap: 10px;
+    }
+    .asset-selector-container.compact .asset-card-icon {
+      width: 36px;
+      height: 36px;
+      font-size: 18px;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .asset-selector-container.compact .asset-card-desc {
+      display: none;
+    }
+    .asset-selector-container.compact .asset-card-sample {
+      display: none;
     }
 
     /* ── Asset Card ────────────────────────────────────── */
@@ -181,23 +464,33 @@ function injectStyles() {
       border-radius: 12px;
       padding: min(14px, 2vw) min(10px, 1.5vw);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.25s ease;
       text-align: center;
       overflow: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 6px;
+      user-select: none;
     }
     .asset-card:hover {
       border-color: #3a6a9a;
       transform: translateY(-2px);
       box-shadow: 0 4px 16px rgba(0, 100, 255, 0.15);
+      animation: card-wobble 0.5s ease;
     }
     .asset-card.selected {
       border-color: #FFD700;
       box-shadow: 0 0 20px rgba(255, 215, 0, 0.3), inset 0 0 20px rgba(255, 215, 0, 0.05);
       background: linear-gradient(180deg, rgba(255, 215, 0, 0.08) 0%, #0d1b2a 100%);
+    }
+    .asset-card.dragging {
+      opacity: 0.5;
+      transform: scale(0.95);
+    }
+    .asset-card.drag-over {
+      border-color: #FFD700;
+      box-shadow: 0 0 12px rgba(255, 215, 0, 0.3);
     }
 
     /* Card icon (gradient circle with emoji) */
@@ -227,6 +520,11 @@ function injectStyles() {
       font-size: clamp(7px, 1.3vw, 10px);
       color: #6a7a8a;
       line-height: 1.3;
+    }
+    .asset-card-sample {
+      font-size: clamp(10px, 1.8vw, 14px);
+      color: #b0c0d0;
+      margin-top: 4px;
     }
 
     /* 3D badge */
@@ -264,7 +562,7 @@ function injectStyles() {
       display: flex;
     }
 
-    /* ── Image Card (for HUD images & splash images) ──── */
+    /* ── Image Card ───────────────────────────────────── */
     .asset-card-image {
       padding: 8px;
     }
@@ -328,6 +626,60 @@ function injectStyles() {
       color: #6a7a8a;
       font-size: clamp(8px, 1.5vw, 12px);
       margin: 8px 0 0 0;
+    }
+
+    /* ── Music Track List ──────────────────────────────── */
+    .music-track-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .music-track {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #0d1b2a;
+      border: 1px solid #1b2838;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+    .music-track:hover {
+      border-color: #3a6a9a;
+    }
+    .music-track-name {
+      flex: 1;
+      color: #e0e0e0;
+      font-size: clamp(9px, 1.5vw, 12px);
+    }
+    .music-track-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid #FFD700;
+      background: transparent;
+      color: #FFD700;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+    .music-track-btn:hover {
+      background: #FFD700;
+      color: #000;
+    }
+    .music-track-btn.playing {
+      background: #FFD700;
+      color: #000;
+      animation: pulse-glow 1s ease-in-out infinite;
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 4px rgba(255,215,0,0.3); }
+      50% { box-shadow: 0 0 12px rgba(255,215,0,0.6); }
     }
 
     /* ── Style Toggle ──────────────────────────────────── */
@@ -405,16 +757,181 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
-/**
- * Build and show the full asset selection overlay.
- * Calls `onStart(preferences)` when the user clicks Start Game.
- */
+// ── Drag to Reorder ─────────────────────────────────────────────────────
+
+function enableDragReorder(grid) {
+  let dragSrc = null;
+
+  grid.querySelectorAll('.asset-card').forEach(card => {
+    card.setAttribute('draggable', 'true');
+
+    card.addEventListener('dragstart', (e) => {
+      dragSrc = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.dataset.id);
+    });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      grid.querySelectorAll('.asset-card').forEach(c => c.classList.remove('drag-over'));
+      dragSrc = null;
+    });
+
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('drag-over');
+    });
+
+    card.addEventListener('dragleave', () => {
+      card.classList.remove('drag-over');
+    });
+
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      card.classList.remove('drag-over');
+      if (dragSrc && dragSrc !== card) {
+        const allCards = [...grid.querySelectorAll('.asset-card')];
+        const fromIdx = allCards.indexOf(dragSrc);
+        const toIdx = allCards.indexOf(card);
+        if (fromIdx < toIdx) {
+          card.after(dragSrc);
+        } else {
+          card.before(dragSrc);
+        }
+      }
+    });
+  });
+}
+
+// ── Sound Preview ───────────────────────────────────────────────────────
+
+let currentPreviewAudio = null;
+let currentPreviewBtn = null;
+
+function stopPreview() {
+  if (currentPreviewAudio) {
+    currentPreviewAudio.pause();
+    currentPreviewAudio.currentTime = 0;
+    currentPreviewAudio = null;
+  }
+  if (currentPreviewBtn) {
+    currentPreviewBtn.classList.remove('playing');
+    currentPreviewBtn.textContent = '▶';
+    currentPreviewBtn = null;
+  }
+}
+
+function createTrackList() {
+  const container = document.createElement('div');
+  container.className = 'music-track-list';
+
+  const label = document.createElement('div');
+  label.className = 'section-title';
+  label.style.marginTop = 'min(16px, 2vh)';
+  label.textContent = 'Music Tracks (Preview)';
+  container.appendChild(label);
+
+  for (const track of Assets.MUSIC_TRACKS) {
+    const row = document.createElement('div');
+    row.className = 'music-track';
+
+    const name = document.createElement('span');
+    name.className = 'music-track-name';
+    name.textContent = track.name;
+
+    const btn = document.createElement('button');
+    btn.className = 'music-track-btn';
+    btn.textContent = '▶';
+    btn.title = `Preview: ${track.name}`;
+
+    btn.addEventListener('click', () => {
+      if (currentPreviewBtn === btn) {
+        stopPreview();
+        return;
+      }
+      stopPreview();
+      const audio = new Audio();
+      audio.preload = 'none';
+      audio.src = track.path;
+      audio.volume = 0.5;
+      audio.play().then(() => { audio.preload = 'auto'; }).catch(() => {});
+      currentPreviewAudio = audio;
+      currentPreviewBtn = btn;
+      btn.classList.add('playing');
+      btn.textContent = '⏸';
+      audio.onended = () => {
+        btn.classList.remove('playing');
+        btn.textContent = '▶';
+        if (currentPreviewBtn === btn) {
+          currentPreviewAudio = null;
+          currentPreviewBtn = null;
+        }
+      };
+    });
+
+    row.appendChild(name);
+    row.appendChild(btn);
+    container.appendChild(row);
+  }
+
+  // SFX preview section
+  const sfxLabel = document.createElement('div');
+  sfxLabel.className = 'section-title';
+  sfxLabel.style.marginTop = 'min(16px, 2vh)';
+  sfxLabel.textContent = 'Sound Effects (Preview)';
+  container.appendChild(sfxLabel);
+
+  for (const [id, sfx] of Object.entries(Assets.SFX)) {
+    const row = document.createElement('div');
+    row.className = 'music-track';
+
+    const name = document.createElement('span');
+    name.className = 'music-track-name';
+    name.textContent = sfx.name;
+
+    const btn = document.createElement('button');
+    btn.className = 'music-track-btn';
+    btn.textContent = '▶';
+    btn.title = `Preview: ${sfx.name}`;
+
+    btn.addEventListener('click', () => {
+      stopPreview();
+      const audio = new Audio();
+      audio.preload = 'none';
+      audio.src = sfx.path;
+      audio.volume = 0.7;
+      audio.play().then(() => { audio.preload = 'auto'; }).catch(() => {});
+      currentPreviewAudio = audio;
+      currentPreviewBtn = btn;
+      btn.classList.add('playing');
+      btn.textContent = '⏸';
+      audio.onended = () => {
+        btn.classList.remove('playing');
+        btn.textContent = '▶';
+        if (currentPreviewBtn === btn) {
+          currentPreviewAudio = null;
+          currentPreviewBtn = null;
+        }
+      };
+    });
+
+    row.appendChild(name);
+    row.appendChild(btn);
+    container.appendChild(row);
+  }
+
+  return container;
+}
+
+// ── Main Entry Point ────────────────────────────────────────────────────
+
 export function showAssetSelector(onStart) {
   if (selectorActive) return;
   selectorActive = true;
   mainMenuShown = true;
 
-  // Inject CSS styles
   injectStyles();
 
   const prefs = Assets.loadPreferences();
@@ -423,10 +940,16 @@ export function showAssetSelector(onStart) {
   overlay.id = 'asset-selector-overlay';
   overlay.className = 'asset-selector-overlay';
   overlay.innerHTML = `
-    <div class="asset-selector-container">
+    <div class="asset-selector-container" id="asset-container">
       <div class="asset-selector-header">
         <h1 class="asset-selector-title">PAC-MAN 3D</h1>
         <p class="asset-selector-subtitle">Choose Your Assets</p>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="asset-toolbar">
+        <button class="toolbar-btn" id="compact-toggle" title="Toggle compact view">▦ Compact</button>
+        <button class="toolbar-btn" id="expand-toggle" title="Toggle detailed view">⊞ Detailed</button>
       </div>
 
       <!-- Tab Navigation -->
@@ -440,18 +963,14 @@ export function showAssetSelector(onStart) {
 
       <!-- Pac-Man Model Section -->
       <div class="asset-section" data-section="pacman">
-        <h2 class="section-title">Pac-Man Model</h2>
-        <div class="asset-grid" id="pacman-grid"></div>
-
+        <div id="pacman-grid-container"></div>
         <h2 class="section-title" style="margin-top:min(16px,2vh);">Pac-Man Image (HUD)</h2>
         <div class="asset-grid asset-grid-small" id="pacman-image-grid"></div>
       </div>
 
       <!-- Ghost Model Section -->
       <div class="asset-section" data-section="ghost" style="display:none;">
-        <h2 class="section-title">Ghost Model</h2>
-        <div class="asset-grid" id="ghost-grid"></div>
-
+        <div id="ghost-grid-container"></div>
         <h2 class="section-title" style="margin-top:min(16px,2vh);">Ghost Image (HUD)</h2>
         <div class="asset-grid asset-grid-small" id="ghost-image-grid"></div>
       </div>
@@ -481,8 +1000,8 @@ export function showAssetSelector(onStart) {
             <input type="checkbox" id="sfx-toggle" ${prefs.sfxEnabled ? 'checked' : ''} />
             <span class="toggle-label">Sound Effects</span>
           </label>
-          <p class="audio-note">Music tracks: ${Assets.MUSIC_TRACKS.length} available</p>
         </div>
+        <div id="track-list-container"></div>
       </div>
 
       <!-- Style Section -->
@@ -513,67 +1032,93 @@ export function showAssetSelector(onStart) {
 
   document.body.appendChild(overlay);
 
-  // Play intro sound when the menu appears
+  // Create animated floating pellets background
+  _cleanupPellets = createFloatingPellets(overlay);
+
+  // Play intro sound
   try {
     const introAudio = new Audio(Assets.SFX.intro.path);
     introAudio.volume = 0.5;
     introAudio.play().catch(() => {});
-  } catch (e) {
-    // Audio not available, skip
+  } catch (e) {}
+
+  // ── Populate grids with grouped sections ──
+
+  // Pac-Man models (grouped)
+  const pacmanContainer = document.getElementById('pacman-grid-container');
+  for (const group of PACMAN_GROUPS) {
+    const groupLabel = document.createElement('div');
+    groupLabel.className = 'group-label';
+    groupLabel.textContent = group.label;
+    pacmanContainer.appendChild(groupLabel);
+    const grid = document.createElement('div');
+    grid.className = 'asset-grid';
+    for (const id of group.ids) {
+      const model = Assets.PACMAN_MODELS[id];
+      if (!model) continue;
+      const card = createModelCard(id, model, 'pacman', prefs.pacmanModel);
+      grid.appendChild(card);
+    }
+    enableDragReorder(grid);
+    pacmanContainer.appendChild(grid);
   }
 
-  // ── Populate asset grids ──
-
-  // Pac-Man models
-  const pacmanGrid = document.getElementById('pacman-grid');
-  for (const [id, model] of Object.entries(Assets.PACMAN_MODELS)) {
-    const card = createModelCard(id, model, 'pacman', prefs.pacmanModel);
-    pacmanGrid.appendChild(card);
-  }
-
-  // Ghost models
-  const ghostGrid = document.getElementById('ghost-grid');
-  for (const [id, model] of Object.entries(Assets.GHOST_MODELS)) {
-    const card = createModelCard(id, model, 'ghost', prefs.ghostModel);
-    ghostGrid.appendChild(card);
+  // Ghost models (grouped)
+  const ghostContainer = document.getElementById('ghost-grid-container');
+  for (const group of GHOST_GROUPS) {
+    const groupLabel = document.createElement('div');
+    groupLabel.className = 'group-label';
+    groupLabel.textContent = group.label;
+    ghostContainer.appendChild(groupLabel);
+    const grid = document.createElement('div');
+    grid.className = 'asset-grid';
+    for (const id of group.ids) {
+      const model = Assets.GHOST_MODELS[id];
+      if (!model) continue;
+      const card = createModelCard(id, model, 'ghost', prefs.ghostModel);
+      grid.appendChild(card);
+    }
+    enableDragReorder(grid);
+    ghostContainer.appendChild(grid);
   }
 
   // Pac-Man images
   const pacImageGrid = document.getElementById('pacman-image-grid');
   for (const [id, img] of Object.entries(Assets.PACMAN_IMAGES)) {
-    const card = createImageCard(id, img, 'pacmanImage', prefs.pacmanImage);
-    pacImageGrid.appendChild(card);
+    pacImageGrid.appendChild(createImageCard(id, img, 'pacmanImage', prefs.pacmanImage));
   }
 
   // Ghost images
   const ghostImageGrid = document.getElementById('ghost-image-grid');
   for (const [id, img] of Object.entries(Assets.GHOST_IMAGES)) {
-    const card = createImageCard(id, img, 'ghostImage', prefs.ghostImage);
-    ghostImageGrid.appendChild(card);
+    ghostImageGrid.appendChild(createImageCard(id, img, 'ghostImage', prefs.ghostImage));
   }
 
   // Fonts
   const fontGrid = document.getElementById('font-grid');
   for (const [id, font] of Object.entries(Assets.FONTS)) {
-    const card = createFontCard(id, font, prefs.font);
-    fontGrid.appendChild(card);
+    fontGrid.appendChild(createFontCard(id, font, prefs.font));
   }
 
   // Splash images
   const splashGrid = document.getElementById('splash-image-grid');
   if (splashGrid) {
     for (const [id, img] of Object.entries(Assets.SPLASH_IMAGES || Assets.INTRO_IMAGES)) {
-      const card = createImageCard(id, img, 'splashImage', prefs.splashImage);
-      splashGrid.appendChild(card);
+      splashGrid.appendChild(createImageCard(id, img, 'splashImage', prefs.splashImage));
     }
   }
 
-  // Update font preview
+  // Audio: track preview list
+  const trackListContainer = document.getElementById('track-list-container');
+  trackListContainer.appendChild(createTrackList());
+
+  // Font preview
   updateFontPreview(prefs.font);
 
   // ── Events ──
 
   // Tab switching
+  const container = document.getElementById('asset-container');
   overlay.querySelectorAll('.asset-tab').forEach(tab => {
     tab.addEventListener('click', () => {
       overlay.querySelectorAll('.asset-tab').forEach(t => t.classList.remove('active'));
@@ -583,6 +1128,7 @@ export function showAssetSelector(onStart) {
       const target = overlay.querySelector(`.asset-section[data-section="${section}"]`);
       if (target) target.style.display = 'block';
       activeSection = section;
+      stopPreview();
     });
   });
 
@@ -595,9 +1141,23 @@ export function showAssetSelector(onStart) {
     });
   });
 
+  // Compact mode toggle
+  const compactBtn = document.getElementById('compact-toggle');
+  const expandBtn = document.getElementById('expand-toggle');
+  expandBtn.classList.add('active');
+  compactBtn.addEventListener('click', () => {
+    container.classList.add('compact');
+    compactBtn.classList.add('active');
+    expandBtn.classList.remove('active');
+  });
+  expandBtn.addEventListener('click', () => {
+    container.classList.remove('compact');
+    expandBtn.classList.add('active');
+    compactBtn.classList.remove('active');
+  });
+
   // Start button
-  const startBtn = document.getElementById('asset-start-btn');
-  startBtn.addEventListener('click', () => {
+  document.getElementById('asset-start-btn').addEventListener('click', () => {
     const finalPrefs = collectPreferences();
     Assets.savePreferences(finalPrefs);
     closeSelector();
@@ -605,7 +1165,12 @@ export function showAssetSelector(onStart) {
   });
 }
 
+let _cleanupPellets = null;
+
 function closeSelector() {
+  stopPreview();
+  cleanupThumbRenderer();
+  if (_cleanupPellets) { _cleanupPellets(); _cleanupPellets = null; }
   const overlay = document.getElementById('asset-selector-overlay');
   if (overlay) {
     overlay.classList.add('fading-out');
@@ -616,9 +1181,8 @@ function closeSelector() {
   }
 }
 
-/**
- * Create a model card with color-coded gradient icon and thumbnail.
- */
+// ── Card Creators ───────────────────────────────────────────────────────
+
 function createModelCard(id, model, type, selectedId) {
   const div = document.createElement('div');
   div.className = `asset-card ${id === selectedId ? 'selected' : ''}`;
@@ -629,7 +1193,6 @@ function createModelCard(id, model, type, selectedId) {
   const cardStyle = styleMap[id] || { gradient: 'linear-gradient(135deg, #555 0%, #333 100%)', emoji: type === 'pacman' ? '🟡' : '👻', bg: '#1a1a1a' };
   const badge = model.type === 'builtin' ? '' : '<span class="asset-badge">3D</span>';
 
-  // Set card background tint
   div.style.background = cardStyle.bg;
 
   div.innerHTML = `
@@ -640,65 +1203,33 @@ function createModelCard(id, model, type, selectedId) {
     <div class="asset-check">✓</div>
   `;
 
-  // If model has a GLTF path, try to load a small 3D preview thumbnail
+  // Generate 3D thumbnail for GLTF models
   if (model.path && model.type === 'gltf') {
     const iconEl = div.querySelector('.asset-card-icon');
-    loadModelThumbnail(model.path, iconEl, cardStyle);
+    renderModelThumbnail(model.path).then(dataUrl => {
+      if (dataUrl && iconEl && iconEl.parentElement) {
+        iconEl.textContent = '';
+        iconEl.style.background = `url(${dataUrl}) center/cover no-repeat`;
+        iconEl.style.borderRadius = '12px';
+        iconEl.style.boxShadow = `0 2px 10px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.1)`;
+      }
+    });
   }
 
   div.addEventListener('click', () => {
     const grid = div.closest('.asset-grid');
     grid.querySelectorAll('.asset-card').forEach(c => c.classList.remove('selected'));
     div.classList.add('selected');
+    spawnParticles(div);
     prefsRef[type === 'pacman' ? 'pacmanModel' : 'ghostModel'] = id;
   });
 
   return div;
 }
 
-/**
- * Attempt to load a model's thumbnail image.
- * Tries common thumbnail patterns, falls back to the styled emoji icon.
- */
-function loadModelThumbnail(modelPath, iconEl, cardStyle) {
-  // Try to find a preview image near the model
-  const basePath = modelPath.replace(/\\/g, '/');
-  const thumbnailPaths = [
-    basePath + '.png',
-    basePath + '.jpg',
-    basePath.replace(/\/scene$/, '/preview.png'),
-    basePath.replace(/\/scene$/, '/screenshot.png'),
-  ];
-
-  // Also try the GLTF directory for any image files
-  const lastSlash = basePath.lastIndexOf('/');
-  if (lastSlash >= 0) {
-    const dir = basePath.substring(0, lastSlash + 1);
-    thumbnailPaths.push(dir + 'preview.png', dir + 'screenshot.png', dir + 'thumb.png');
-  }
-
-  let loaded = false;
-  for (const src of thumbnailPaths) {
-    const img = new Image();
-    img.onload = () => {
-      if (loaded) return;
-      loaded = true;
-      // Replace emoji with actual thumbnail
-      iconEl.textContent = '';
-      iconEl.style.background = `url("${src}") center/cover no-repeat, ${cardStyle.gradient}`;
-      iconEl.style.backgroundSize = 'cover';
-    };
-    img.onerror = () => {}; // Silently ignore missing thumbnails
-    img.src = src;
-  }
-}
-
 // Mutable prefs reference for live updates
 const prefsRef = Assets.loadPreferences();
 
-/**
- * Create an image card with actual image thumbnail.
- */
 function createImageCard(id, img, type, selectedId) {
   const div = document.createElement('div');
   div.className = `asset-card asset-card-image ${id === selectedId ? 'selected' : ''}`;
@@ -715,15 +1246,13 @@ function createImageCard(id, img, type, selectedId) {
     const grid = div.closest('.asset-grid');
     grid.querySelectorAll('.asset-card').forEach(c => c.classList.remove('selected'));
     div.classList.add('selected');
+    spawnParticles(div);
     prefsRef[type] = id;
   });
 
   return div;
 }
 
-/**
- * Create a font card with the font name rendered in its own font.
- */
 function createFontCard(id, font, selectedId) {
   const div = document.createElement('div');
   div.className = `asset-card ${id === selectedId ? 'selected' : ''}`;
@@ -732,7 +1261,7 @@ function createFontCard(id, font, selectedId) {
   div.innerHTML = `
     <div class="asset-card-name" style="font-family:'${font.family}',monospace;font-size:clamp(14px,2.5vw,20px);color:#FFD700;">${font.name}</div>
     <div class="asset-card-desc">${font.description}</div>
-    <div class="asset-card-sample" style="font-family:'${font.family}',monospace;font-size:clamp(10px,1.8vw,14px);color:#b0c0d0;margin-top:4px;">Aa Bb 123</div>
+    <div class="asset-card-sample" style="font-family:'${font.family}',monospace;">Aa Bb 123</div>
     <div class="asset-check">✓</div>
   `;
 
@@ -740,6 +1269,7 @@ function createFontCard(id, font, selectedId) {
     const grid = div.closest('.asset-grid');
     grid.querySelectorAll('.asset-card').forEach(c => c.classList.remove('selected'));
     div.classList.add('selected');
+    spawnParticles(div);
     prefsRef.font = id;
     updateFontPreview(id);
   });
@@ -766,16 +1296,10 @@ function collectPreferences() {
   };
 }
 
-/**
- * Check if the selector is currently active.
- */
 export function isSelectorActive() {
   return selectorActive;
 }
 
-/**
- * Returns whether the main menu was shown this session.
- */
 export function wasMainMenuShown() {
   return mainMenuShown;
 }
