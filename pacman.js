@@ -848,19 +848,80 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.style.background = 'rgba(0,0,0,0.5)';
         overlay.style.zIndex = '5000';
         overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
         overlay.style.alignItems = 'center';
         overlay.style.justifyContent = 'center';
-        overlay.style.pointerEvents = 'none';
         overlay.style.fontFamily = cdFontFamily;
 
         const num = document.createElement('div');
+        num.style.fontFamily = LEGACY_NUMBER_FONT;
         num.style.fontSize = upx(120) + 'px';
         num.style.fontWeight = 'bold';
         num.style.color = '#FFD700';
         num.style.textShadow = upx(6) + 'px ' + upx(6) + 'px ' + upx(20) + 'px #000';
         num.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        num.style.pointerEvents = 'none';
         overlay.appendChild(num);
         document.body.appendChild(overlay);
+
+        // Show Puter sign-in during countdown (only if not already signed in and Puter is available)
+        PuterIntegration.getCurrentUser().then(user => {
+            if (user && user.username) {
+                const badge = document.createElement('div');
+                badge.style.marginTop = upx(20) + 'px';
+                badge.style.fontFamily = LEGACY_NUMBER_FONT;
+                badge.style.fontSize = upx(10) + 'px';
+                badge.style.color = '#88ccff';
+                badge.style.textAlign = 'center';
+                badge.style.pointerEvents = 'none';
+                badge.textContent = `☁️ Signed in as ${user.username}`;
+                if (overlay.parentElement) overlay.appendChild(badge);
+            } else if (PuterIntegration.isPuterAvailable()) {
+                const signInBtn = document.createElement('button');
+                signInBtn.style.marginTop = upx(20) + 'px';
+                signInBtn.style.fontFamily = LEGACY_NUMBER_FONT;
+                signInBtn.style.fontSize = upx(9) + 'px';
+                signInBtn.style.color = '#0d1b2a';
+                signInBtn.style.background = 'linear-gradient(135deg, #88ccff, #55aaee)';
+                signInBtn.style.border = '1px solid rgba(136,204,255,0.4)';
+                signInBtn.style.borderRadius = upx(8) + 'px';
+                signInBtn.style.padding = upx(8) + 'px ' + upx(16) + 'px';
+                signInBtn.style.cursor = 'pointer';
+                signInBtn.style.fontWeight = 'bold';
+                signInBtn.style.textAlign = 'center';
+                signInBtn.style.boxShadow = '0 2px 12px rgba(85,170,238,0.3)';
+                signInBtn.style.transition = 'filter 0.2s, transform 0.2s';
+                signInBtn.textContent = '☁️ Sign in with Puter';
+                signInBtn.onmouseenter = () => { signInBtn.style.filter = 'brightness(1.15)'; signInBtn.style.transform = 'scale(1.05)'; };
+                signInBtn.onmouseleave = () => { signInBtn.style.filter = ''; signInBtn.style.transform = ''; };
+                signInBtn.onclick = () => {
+                    signInBtn.textContent = 'Signing in...';
+                    signInBtn.style.cursor = 'wait';
+                    signInBtn.disabled = true;
+                    PuterIntegration.signIn().then(signedUser => {
+                        if (signedUser && signedUser.username) {
+                            signInBtn.textContent = `☁️ Signed in as ${signedUser.username}`;
+                            signInBtn.style.cursor = 'default';
+                            signInBtn.style.background = 'rgba(136,204,255,0.15)';
+                            signInBtn.style.color = '#88ccff';
+                            signInBtn.style.border = '1px solid rgba(136,204,255,0.3)';
+                            signInBtn.onclick = null;
+                            signInBtn.onmouseenter = null;
+                            signInBtn.onmouseleave = null;
+                        } else {
+                            signInBtn.textContent = '☁️ Sign in with Puter';
+                            signInBtn.style.cursor = 'pointer';
+                            signInBtn.disabled = false;
+                        }
+                    }).catch(() => {
+                        signInBtn.textContent = '☁️ Sign in with Puter';
+                        signInBtn.style.cursor = 'pointer';
+                        signInBtn.disabled = false;
+                    });
+                };
+                if (overlay.parentElement) overlay.appendChild(signInBtn);
+            }
+        }).catch(() => {});
 
         let count = 10;
         function tick() {
@@ -1331,6 +1392,8 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 Assets.loadSketchfabModel(modelDef.path, loader, function (gltf) {
                     const model = gltf.scene;
                     model.scale.set(GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8);
+                    // Rotate from Y-up (Sketchfab) to Z-up (game world)
+                    model.rotation.x = -Math.PI / 2;
                     model.position.copy(placeholder.position);
                     model._ghostId = ghostId;
 
@@ -1422,9 +1485,21 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         };
     }();
 
+    // Track current level's key listeners for cleanup
+    var _currentKeyCleanup = null;
+
     var createKeyState = function () {
+        // Remove previous level's key listeners to prevent stacking
+        if (_currentKeyCleanup) {
+            _currentKeyCleanup();
+            _currentKeyCleanup = null;
+        }
+
         var keyState = {};
-        document.body.addEventListener('keydown', function (event) {
+
+        function onKeyDown(event) {
+            // Ignore key repeat (held-down key auto-fires)
+            if (event.repeat) return;
             keyState[event.keyCode] = true;
             keyState[String.fromCharCode(event.keyCode)] = true;
             if (event.key) keyState[event.key] = true;
@@ -1432,18 +1507,40 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             if (!audioInitialized) {
                 initAudio();
             }
-        });
-        document.body.addEventListener('keyup', function (event) {
+        }
+        function onKeyUp(event) {
             keyState[event.keyCode] = false;
             keyState[String.fromCharCode(event.keyCode)] = false;
             if (event.key) keyState[event.key] = false;
-        });
-        document.body.addEventListener('blur', function (event) {
+        }
+        function onBlur() {
             for (var key in keyState) {
                 if (keyState.hasOwnProperty(key))
                     keyState[key] = false;
             }
-        });
+        }
+        function onVisibility() {
+            if (document.hidden) {
+                for (var key in keyState) {
+                    if (keyState.hasOwnProperty(key))
+                        keyState[key] = false;
+                }
+            }
+        }
+
+        document.body.addEventListener('keydown', onKeyDown);
+        document.body.addEventListener('keyup', onKeyUp);
+        document.body.addEventListener('blur', onBlur);
+        document.addEventListener('visibilitychange', onVisibility);
+
+        // Store cleanup function for next level transition
+        _currentKeyCleanup = function () {
+            document.body.removeEventListener('keydown', onKeyDown);
+            document.body.removeEventListener('keyup', onKeyUp);
+            document.body.removeEventListener('blur', onBlur);
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+
         return keyState;
     };
 
@@ -1733,52 +1830,6 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 puterBadge.style.textAlign = 'center';
                 puterBadge.textContent = `☁️ Signed in as ${user.username}`;
                 if (loading.parentElement) loading.appendChild(puterBadge);
-            } else if (PuterIntegration.isPuterAvailable()) {
-                // Not signed in but Puter is loaded — show a Sign in button for cloud leaderboards & AI ghosts
-                const signInBtn = document.createElement('button');
-                signInBtn.style.zIndex = '2';
-                signInBtn.style.marginTop = upx(12) + 'px';
-                signInBtn.style.fontFamily = LEGACY_NUMBER_FONT;
-                signInBtn.style.fontSize = upx(9) + 'px';
-                signInBtn.style.color = '#0d1b2a';
-                signInBtn.style.background = 'linear-gradient(135deg, #88ccff, #55aaee)';
-                signInBtn.style.border = '1px solid rgba(136,204,255,0.4)';
-                signInBtn.style.borderRadius = upx(8) + 'px';
-                signInBtn.style.padding = upx(8) + 'px ' + upx(16) + 'px';
-                signInBtn.style.cursor = 'pointer';
-                signInBtn.style.fontWeight = 'bold';
-                signInBtn.style.textAlign = 'center';
-                signInBtn.style.boxShadow = '0 2px 12px rgba(85,170,238,0.3)';
-                signInBtn.style.transition = 'filter 0.2s, transform 0.2s';
-                signInBtn.textContent = '☁️ Sign in with Puter';
-                signInBtn.onmouseenter = () => { signInBtn.style.filter = 'brightness(1.15)'; signInBtn.style.transform = 'scale(1.05)'; };
-                signInBtn.onmouseleave = () => { signInBtn.style.filter = ''; signInBtn.style.transform = ''; };
-                signInBtn.onclick = () => {
-                    signInBtn.textContent = 'Signing in...';
-                    signInBtn.style.cursor = 'wait';
-                    signInBtn.disabled = true;
-                    PuterIntegration.signIn().then(signedUser => {
-                        if (signedUser && signedUser.username) {
-                            signInBtn.textContent = `☁️ Signed in as ${signedUser.username}`;
-                            signInBtn.style.cursor = 'default';
-                            signInBtn.style.background = 'rgba(136,204,255,0.15)';
-                            signInBtn.style.color = '#88ccff';
-                            signInBtn.style.border = '1px solid rgba(136,204,255,0.3)';
-                            signInBtn.onclick = null;
-                            signInBtn.onmouseenter = null;
-                            signInBtn.onmouseleave = null;
-                        } else {
-                            signInBtn.textContent = '☁️ Sign in with Puter';
-                            signInBtn.style.cursor = 'pointer';
-                            signInBtn.disabled = false;
-                        }
-                    }).catch(() => {
-                        signInBtn.textContent = '☁️ Sign in with Puter';
-                        signInBtn.style.cursor = 'pointer';
-                        signInBtn.disabled = false;
-                    });
-                };
-                if (loading.parentElement) loading.appendChild(signInBtn);
             }
         }).catch(() => {});
 
