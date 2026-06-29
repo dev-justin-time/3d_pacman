@@ -1353,9 +1353,20 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 Assets.loadSketchfabModel(fullPath, loader, function (gltf) {
                     const model = gltf.scene;
                     // Scale model to match existing pacman size
-                    model.scale.set(PACMAN_RADIUS * 2, PACMAN_RADIUS * 2, PACMAN_RADIUS * 2);
                     // Rotate from Y-up (Sketchfab) to Z-up (game world)
                     model.rotation.x = -Math.PI / 2;
+                    // Auto-normalize: scale model to consistent visual size
+                    model.scale.set(1, 1, 1);
+                    const _pBox = new THREE.Box3().setFromObject(model);
+                    const _pSize = new THREE.Vector3();
+                    _pBox.getSize(_pSize);
+                    const _pDiag = Math.sqrt(_pSize.x * _pSize.x + _pSize.y * _pSize.y + _pSize.z * _pSize.z);
+                    if (_pDiag > 0) {
+                        const _pScale = (PACMAN_RADIUS * 2 * Math.sqrt(3)) / _pDiag;
+                        model.scale.set(_pScale, _pScale, _pScale);
+                    } else {
+                        model.scale.set(PACMAN_RADIUS * 2, PACMAN_RADIUS * 2, PACMAN_RADIUS * 2);
+                    }
                     model.position.copy(placeholder.position);
                     
                     // Copy properties
@@ -1451,9 +1462,20 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
 
                 Assets.loadSketchfabModel(modelDef.path, loader, function (gltf) {
                     const model = gltf.scene;
-                    model.scale.set(GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8);
                     // Rotate from Y-up (Sketchfab) to Z-up (game world)
                     model.rotation.x = -Math.PI / 2;
+                    // Auto-normalize: scale model to consistent visual size
+                    model.scale.set(1, 1, 1);
+                    const _gBox = new THREE.Box3().setFromObject(model);
+                    const _gSize = new THREE.Vector3();
+                    _gBox.getSize(_gSize);
+                    const _gDiag = Math.sqrt(_gSize.x * _gSize.x + _gSize.y * _gSize.y + _gSize.z * _gSize.z);
+                    if (_gDiag > 0) {
+                        const _gScale = (GHOST_RADIUS * 2 * Math.sqrt(3)) / _gDiag;
+                        model.scale.set(_gScale, _gScale, _gScale);
+                    } else {
+                        model.scale.set(GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8);
+                    }
                     model.position.copy(placeholder.position);
                     model._ghostId = ghostId;
 
