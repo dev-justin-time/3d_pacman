@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thumbnail Generator — PAC-MAN 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #FFD700; font-family: 'Segoe UI', sans-serif; }
+  h1 { text-align: center; padding: 20px; font-size: 28px; text-shadow: 0 0 20px rgba(255,215,0,0.3); }
+  #status {
+    text-align: center; padding: 8px; font-size: 14px; color: #aaa;
+    position: sticky; top: 0; background: rgba(10,10,26,0.95); z-index: 10;
+    border-bottom: 1px solid #333;
+  }
+  #controls {
+    display: flex; justify-content: center; gap: 12px; padding: 12px;
+    position: sticky; top: 36px; background: rgba(10,10,26,0.95); z-index: 10;
+  }
+  #controls button {
+    background: #21265B; color: #FFD700; border: none; border-radius: 8px;
+    padding: 8px 18px; font-size: 14px; cursor: pointer; font-weight: bold;
+  }
+  #controls button:hover { background: #2d3570; }
+  #controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .section-title {
+    font-size: 20px; font-weight: bold; padding: 20px 24px 8px;
+    color: #FFD700; border-bottom: 1px solid #222;
+  }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px; padding: 16px 24px;
+  }
+  .card {
+    background: #111128; border: 1px solid #333; border-radius: 12px;
+    padding: 12px; text-align: center; transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(255,215,0,0.15); }
+  .card img, .card canvas {
+    width: 128px; height: 128px; border-radius: 8px; margin: 0 auto 8px;
+    display: block; background: #0a0a2e; object-fit: contain;
+  }
+  .card .name { font-size: 14px; font-weight: bold; color: #FFD700; }
+  .card .desc { font-size: 11px; color: #888; margin-top: 4px; }
+  .card .status-tag {
+    display: inline-block; font-size: 10px; padding: 2px 8px;
+    border-radius: 4px; margin-top: 6px;
+  }
+  .status-tag.pending { background: #333; color: #888; }
+  .status-tag.loading { background: #224; color: #88f; }
+  .status-tag.done { background: #141; color: #4f4; }
+  .status-tag.error { background: #411; color: #f44; }
+  .emoji-placeholder {
+    width: 128px; height: 128px; border-radius: 8px; margin: 0 auto 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 48px; background: linear-gradient(135deg, #1a1a3e, #0a0a2e);
+  }
+  #download-section {
+    text-align: center; padding: 20px; border-top: 1px solid #333;
+    margin-top: 20px;
+  }
+  #download-section button {
+    background: #FFD700; color: #111; border: none; border-radius: 8px;
+    padding: 10px 24px; font-size: 16px; font-weight: bold; cursor: pointer;
+  }
+  #download-section button:hover { filter: brightness(1.1); }
+  #download-section button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<h1>🎮 3D Model Thumbnail Generator</h1>
+<div id="status">Ready — click "Generate All" to render thumbnails</div>
+<div id="controls">
+  <button id="btnGenerate" onclick="generateAll()">🚀 Generate All</button>
+  <button id="btnDownload" onclick="downloadAll()" disabled>💾 Download All as ZIP</button>
+  <button id="btnCleanup" onclick="cleanupAll()" disabled>🧹 Cleanup Renderer</button>
+</div>
+
+<div id="output"></div>
+
+<div id="download-section">
+  <p style="color:#888; margin-bottom:12px;">Thumbnails are rendered at 256×256 with transparent backgrounds</p>
+  <button id="btnDownloadPNG" onclick="downloadAll()" disabled>Download All as PNG files</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ── Model definitions (mirrored from asset-manager.js) ──────────────────
+const PACMAN_MODELS = {
+  classic: { id:'classic', name:'Classic Sphere', description:'Original geometric pac-man', path:null, type:'builtin', emoji:'🟡' },
+  yellow: { id:'yellow', name:'Yellow Pac-Man', path:'assets/models/pacman/yellow', type:'gltf', emoji:'🟡' },
+  robo: { id:'robo', name:'Robot Pac-Man', path:'assets/models/pacman/robo', type:'gltf', emoji:'🤖' },
+  girl: { id:'girl', name:'Girl Pac-Man', path:'assets/models/pacman/girl_pacman_animated/girl_pacman_animated', type:'gltf', emoji:'👧' },
+  pixel: { id:'pixel', name:'Pixel Pac-Man', path:'assets/models/pacman/pac_man_pixels/pixel', type:'gltf', emoji:'👾' },
+  rockin: { id:'rockin', name:"Rock 'n Roll", path:'assets/models/pacman/pac_n_roll/rockinpm', type:'gltf', emoji:'🎸' },
+  pacManExtract: { id:'pacManExtract', name:'Pac-Man (Extract)', path:'assets/models/pacman/pac_man/scene', type:'gltf', emoji:'🟡' },
+  robotPac: { id:'robotPac', name:'Robot Pac-Man v2', path:'assets/models/pacman/robot_pac-man/scene', type:'gltf', emoji:'🤖' }
+};
+
+const GHOST_MODELS = {
+  classic: { id:'classic', name:'Classic Sphere', description:'Original geometric ghost', path:null, type:'builtin', emoji:'👻' },
+  inky: { id:'inky', name:'Inky (Blue)', path:'assets/models/ghost/inky', type:'gltf', emoji:'💙' },
+  blueGhost: { id:'blueGhost', name:'Blue Ghost', path:'assets/models/ghost/blue_ghost/blue', type:'gltf', emoji:'💙' },
+  pinky: { id:'pinky', name:'Pinky Ghost', path:'assets/models/ghost/pinky/scene', type:'gltf', emoji:'💗' },
+  candy: { id:'candy', name:'Candy Monsters', path:'assets/models/ghost/candy_monsters/candy', type:'gltf', emoji:'🍬' }
+};
+
+// ── Thumbnail Renderer ───────────────────────────────────────────────────
+const THUMB_SIZE = 256;
+let thumbRenderer = null;
+let thumbScene = null;
+let thumbCamera = null;
+let thumbLoader = null;
+const thumbnailData = {}; // { modelId: dataURL }
+
+function getThumbRenderer() {
+  if (thumbRenderer) return thumbRenderer;
+  thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  thumbRenderer.setSize(THUMB_SIZE, THUMB_SIZE);
+  thumbRenderer.setClearColor(0x000000, 0);
+  thumbScene = new THREE.Scene();
+  thumbScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.6);
+  d1.position.set(2, 3, 4);
+  thumbScene.add(d1);
+  const d2 = new THREE.DirectionalLight(0xffffff, 0.3);
+  d2.position.set(-2, -1, -3);
+  thumbScene.add(d2);
+  thumbCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  thumbLoader = new GLTFLoader();
+  return thumbRenderer;
+}
+
+function disposeThumbScene() {
+  if (!thumbScene) return;
+  const toRemove = [];
+  thumbScene.traverse(obj => {
+    if (obj.isMesh) {
+      toRemove.push(obj);
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach(m => {
+          if (m.map) m.map.dispose();
+          m.dispose();
+        });
+      }
+    }
+  });
+  toRemove.forEach(obj => thumbScene.remove(obj));
+}
+
+function renderModelThumbnail(modelPath) {
+  return new Promise((resolve, reject) => {
+    const renderer = getThumbRenderer();
+
+    // Fetch gltf, patch buffer URI, then load
+    const fullPath = modelPath + '.gltf';
+    fetch(fullPath)
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then(gltfText => {
+        const gltfJson = JSON.parse(gltfText);
+        const binFilename = (modelPath + '.bin').split('/').pop();
+        let needsPatch = false;
+        if (gltfJson.buffers) {
+          for (const buf of gltfJson.buffers) {
+            if (buf.uri && buf.uri !== binFilename && buf.uri.endsWith('.bin')) {
+              buf.uri = binFilename;
+              needsPatch = true;
+            }
+          }
+        }
+
+        const normalized = modelPath.replace(/\\/g, '/');
+        const lastSlash = normalized.lastIndexOf('/');
+        const directory = lastSlash >= 0 ? normalized.substring(0, lastSlash + 1) : '';
+
+        if (directory) thumbLoader.setPath(directory);
+
+        const loadFn = (url) => {
+          thumbLoader.load(url, (gltf) => {
+            try {
+              disposeThumbScene();
+              const model = gltf.scene;
+              // Auto-fit
+              const box = new THREE.Box3().setFromObject(model);
+              const size = box.getSize(new THREE.Vector3());
+              const center = box.getCenter(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.y, size.z);
+              const scale = 2.0 / maxDim;
+              model.scale.multiplyScalar(scale);
+              model.position.sub(center.multiplyScalar(scale));
+
+              thumbScene.add(model);
+              renderer.render(thumbScene, thumbCamera);
+
+              thumbCamera.position.set(0, 0, 4);
+              thumbCamera.lookAt(0, 0, 0);
+              renderer.render(thumbScene, thumbCamera);
+
+              const dataURL = renderer.domElement.toDataURL('image/png');
+              disposeThumbScene();
+              resolve(dataURL);
+            } catch (err) {
+              disposeThumbScene();
+              reject(err);
+            }
+          }, undefined, (err) => {
+            reject(err);
+          });
+        };
+
+        if (needsPatch) {
+          const blob = new Blob([JSON.stringify(gltfJson)], { type: 'application/json' });
+          const blobUrl = URL.createObjectURL(blob);
+          loadFn(blobUrl);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+        } else {
+          loadFn(fullPath);
+        }
+      })
+      .catch(err => {
+        // Fallback: try direct load using just the filename (loader path already set)
+        const filename = fullPath.split('/').pop();
+        thumbLoader.load(filename, (gltf) => {
+          try {
+            disposeThumbScene();
+            const model = gltf.scene;
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            const scale = 2.0 / maxDim;
+            model.scale.multiplyScalar(scale);
+            model.position.sub(center.multiplyScalar(scale));
+            thumbScene.add(model);
+            thumbCamera.position.set(0, 0, 4);
+            thumbCamera.lookAt(0, 0, 0);
+            renderer.render(thumbScene, thumbCamera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            disposeThumbScene();
+            resolve(dataURL);
+          } catch (e2) {
+            disposeThumbScene();
+            reject(e2);
+          }
+        }, undefined, (e2) => reject(e2));
+      });
+  });
+}
+
+// ── UI Building ──────────────────────────────────────────────────────────
+const outputEl = document.getElementById('output');
+const statusEl = document.getElementById('status');
+
+function buildCard(id, model, section) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = `card-${section}-${id}`;
+
+  if (model.type === 'builtin' || !model.path) {
+    card.innerHTML = `
+      <div class="emoji-placeholder">${model.emoji || '🎮'}</div>
+      <div class="name">${model.name}</div>
+      <div class="desc">${model.description || 'Built-in'}</div>
+      <span class="status-tag done">Built-in</span>
+    `;
+  } else {
+    card.innerHTML = `
+      <div class="emoji-placeholder" id="thumb-${section}-${id}">${model.emoji || '🎮'}</div>
+      <div class="name">${model.name}</div>
+      <div class="desc">${model.description || model.path}</div>
+      <span class="status-tag pending" id="tag-${section}-${id}">Pending</span>
+    `;
+  }
+  return card;
+}
+
+function buildUI() {
+  outputEl.innerHTML = '';
+
+  // Pac-Man section
+  const pmTitle = document.createElement('div');
+  pmTitle.className = 'section-title';
+  pmTitle.textContent = '🟡 Pac-Man Models';
+  outputEl.appendChild(pmTitle);
+
+  const pmGrid = document.createElement('div');
+  pmGrid.className = 'grid';
+  for (const [id, model] of Object.entries(PACMAN_MODELS)) {
+    pmGrid.appendChild(buildCard(id, model, 'pac'));
+  }
+  outputEl.appendChild(pmGrid);
+
+  // Ghost section
+  const ghTitle = document.createElement('div');
+  ghTitle.className = 'section-title';
+  ghTitle.textContent = '👻 Ghost Models';
+  outputEl.appendChild(ghTitle);
+
+  const ghGrid = document.createElement('div');
+  ghGrid.className = 'grid';
+  for (const [id, model] of Object.entries(GHOST_MODELS)) {
+    ghGrid.appendChild(buildCard(id, model, 'ghost'));
+  }
+  outputEl.appendChild(ghGrid);
+}
+
+buildUI();
+
+// ── Generate All ─────────────────────────────────────────────────────────
+async function generateAll() {
+  const btn = document.getElementById('btnGenerate');
+  btn.disabled = true;
+  btn.textContent = '⏳ Rendering...';
+
+  getThumbRenderer(); // Initialize renderer
+
+  const allModels = [
+    ...Object.entries(PACMAN_MODELS).map(([id, m]) => ({ id, model: m, section: 'pac' })),
+    ...Object.entries(GHOST_MODELS).map(([id, m]) => ({ id, model: m, section: 'ghost' }))
+  ];
+
+  const gltfModels = allModels.filter(m => m.model.type === 'gltf' && m.model.path);
+  let completed = 0;
+  let errors = 0;
+
+  statusEl.textContent = `Rendering ${gltfModels.length} models... 0/${gltfModels.length}`;
+
+  for (const { id, model, section } of gltfModels) {
+    const tagEl = document.getElementById(`tag-${section}-${id}`);
+    const thumbEl = document.getElementById(`thumb-${section}-${id}`);
+    if (tagEl) { tagEl.textContent = 'Loading...'; tagEl.className = 'status-tag loading'; }
+
+    try {
+      const dataURL = await renderModelThumbnail(model.path);
+      thumbnailData[`${section}-${id}`] = dataURL;
+
+      if (thumbEl) {
+        const img = document.createElement('img');
+        img.src = dataURL;
+        img.alt = model.name;
+        img.style.width = '128px';
+        img.style.height = '128px';
+        img.style.borderRadius = '8px';
+        img.style.margin = '0 auto 8px';
+        img.style.display = 'block';
+        img.style.background = '#0a0a2e';
+        img.style.objectFit = 'contain';
+        thumbEl.replaceWith(img);
+      }
+      if (tagEl) { tagEl.textContent = '✓ Done'; tagEl.className = 'status-tag done'; }
+      completed++;
+    } catch (err) {
+      console.warn(`Failed to render ${model.name}:`, err);
+      if (tagEl) { tagEl.textContent = '✗ Error'; tagEl.className = 'status-tag error'; }
+      errors++;
+    }
+
+    statusEl.textContent = `Rendering... ${completed + errors}/${gltfModels.length} (${errors} errors)`;
+  }
+
+  statusEl.textContent = `✅ Complete! ${completed} rendered, ${errors} errors.`;
+  btn.disabled = false;
+  btn.textContent = '🚀 Regenerate All';
+  document.getElementById('btnDownload').disabled = false;
+  document.getElementById('btnDownloadPNG').disabled = false;
+  document.getElementById('btnCleanup').disabled = false;
+}
+
+// ── Cleanup ──────────────────────────────────────────────────────────────
+function cleanupAll() {
+  disposeThumbScene();
+  if (thumbRenderer) {
+    thumbRenderer.dispose();
+    thumbRenderer = null;
+    thumbScene = null;
+    thumbCamera = null;
+    thumbLoader = null;
+  }
+  statusEl.textContent = '🧹 Renderer cleaned up. Memory freed.';
+  document.getElementById('btnCleanup').disabled = true;
+}
+
+// ── Download ─────────────────────────────────────────────────────────────
+function downloadAll() {
+  const keys = Object.keys(thumbnailData);
+  if (keys.length === 0) {
+    alert('No thumbnails generated yet. Click "Generate All" first.');
+    return;
+  }
+
+  // Download each as individual PNG
+  for (const key of keys) {
+    const link = document.createElement('a');
+    link.download = `thumb_${key}.png`;
+    link.href = thumbnailData[key];
+    link.click();
+  }
+  statusEl.textContent = `💾 Downloaded ${keys.length} thumbnails.`;
+}
+
+// Expose to window for button onclick
+window.generateAll = generateAll;
+window.cleanupAll = cleanupAll;
+window.downloadAll = downloadAll;
+</script>
+</body>
+</html>

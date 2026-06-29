@@ -863,7 +863,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         overlay.appendChild(num);
         document.body.appendChild(overlay);
 
-        let count = 10;
+        let count = 3;
         function tick() {
             if (count > 0) {
                 num.textContent = count;
@@ -1151,10 +1151,6 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         renderer.setClearColor('black', 1.0);
         renderer.setSize(window.innerWidth, window.innerHeight);
         // Ensure the canvas is behind all HUD overlays
-        renderer.domElement.style.position = 'fixed';
-        renderer.domElement.style.top = '0';
-        renderer.domElement.style.left = '0';
-        renderer.domElement.style.zIndex = '0';
         document.body.appendChild(renderer.domElement);
         return renderer;
     }
@@ -2212,7 +2208,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                         const bobAmount = Math.sin(pacman.distanceMoved * 3) * 0.08;
                         pacman.position.z = Math.max(0, bobAmount);
                     }
-                } else if (pacman.geometries) {
+                } else {
                     if (lost) {
                         var angle = (now - lostTime) * Math.PI / 2 * PACMAN_DEATH_ANIMATION_SPEED;
                         var frame = Math.min(pacman.geometries.length - 1, Math.floor(angle / Math.PI * pacman.geometries.length));
