@@ -1,417 +1,689 @@
 /**
- * floors.js — Multi-Level Glass Floor System
+ * floors.js — 3D Pac-Man Cat-Head Game Map
  * ============================================================================
- * Creates stacked transparent glass floors in the shape of a cat silhouette,
- * each level outlined with neon-colored edge rails for a cyberpunk aesthetic.
+ * Multi-level glass floor system shaped like a cat head, with neon edge rails
+ * of different colors per floor level, plus full Pac-Man game elements:
+ * maze walls, collectible dots, power pellets, spawn points, and a legend.
  *
- * Import as: import { createCatFloorSystem, updateCatFloors, removeCatFloors } from './floors.js'
+ * Import as:
+ *   import { createCatHeadMap, CAT_HEAD_LEVEL, updateCatHeadMap, removeCatHeadMap } from './floors.js'
  *
  * Usage:
- *   const floors = createCatFloorSystem(scene, {
- *     levels: 4,
- *     spacing: 1.5,
- *     baseY: 0,
- *     scale: 3.0,
- *     glassOpacity: 0.15
- *   });
+ *   // As a standalone visual:
+ *   const map = createCatHeadMap(scene, { levels: 4 });
+ *   updateCatHeadMap(map, deltaTime, elapsed);
+ *   removeCatHeadMap(scene, map);
  *
- *   // In your animation loop:
- *   updateCatFloors(floors, deltaTime);
- *
- *   // Cleanup:
- *   removeCatFloors(scene, floors);
+ *   // As a Pac-Man level:
+ *   import { CAT_HEAD_LEVEL } from './floors.js';
+ *   // Pass CAT_HEAD_LEVEL to the game engine like any LEVELS[n]
  */
 
 import * as THREE from 'three';
 
-// ─── Cat Silhouette Shape ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// CAT-HEAD PAC-MAN LEVEL (Exportable Grid)
+// ═══════════════════════════════════════════════════════════════════════════════
 //
-// The cat shape is built with quadratic bezier curves to create a smooth,
-// recognizable feline silhouette: rounded head, pointed ears, curved body,
-// and a sweeping tail.
+// A 25×30 cell Pac-Man level shaped like a cat's head silhouette.
+// Legend:  # = wall   . = dot   o = power pellet   P = pacman spawn   G = ghost spawn
+
+export const CAT_HEAD_LEVEL = [
+    '            #############            ',
+    '           ##...........##           ',
+    '          #...............#          ',
+    '         #.................#         ',
+    '        #...###.....###.....#        ',
+    '       #...####.....####....#       ',
+    '      #....####.....####....#      ',
+    '     #.....##.........##.....#     ',
+    '    #..........................#    ',
+    '   #............................#   ',
+    '  #..............................#  ',
+    ' #.........###.......###..........# ',
+    ' #........####.......####.........# ',
+    ' #.......#####.......#####........# ',
+    ' #.......#####.......#####........# ',
+    ' #.......#####.......#####........# ',
+    ' #........###.........###.........# ',
+    ' #.........#...........#...........# ',
+    ' #.........#...........#...........# ',
+    '  #........#...........#..........#  ',
+    '   #.......#...........#.........#   ',
+    '    #......#...........#........#    ',
+    '     #.....##.........##.......#     ',
+    '      #...####.......####......#      ',
+    '       #..#####.......#####...#       ',
+    '        #....................#        ',
+    '         #........P.G.......#         ',
+    '          #.......o.o......#          ',
+    '           ##............##           ',
+    '            ##############            ',
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CAT SILHOUETTE SHAPE (Three.js Shape)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Smooth bezier-curve cat head silhouette for the glass floor extrusions.
+// This matches the vibe of the grid level above — rounded head, pointy ears,
+// wide cheeks, and a rounded chin.
 
 /**
- * Build a cat silhouette as a THREE.Shape.
- * The shape is centered at origin and designed to fit roughly within
- * a [-3, 3] × [-2.5, 2.5] bounding box.
+ * Build a cat head silhouette as a THREE.Shape.
+ * Centered at origin, fits roughly within [-2.5, 2.5] × [-3, 3].
  *
- * Anatomy reference:
- *   - Head: wide, rounded, centered near top
- *   - Ears: two triangles rising above the head
- *   - Body: tapered oval below the head
- *   - Tail: sweeping curve from the right side
- *
- * @param {number} [s=1.0] - Uniform scale factor for the shape
+ * @param {number} [s=1.0] - Uniform scale factor
  * @returns {THREE.Shape}
  */
-function createCatShape(s = 1.0) {
+function createCatHeadShape(s = 1.0) {
     const cat = new THREE.Shape();
 
-    // ── Starting point: top of head, between the ears ──
-    cat.moveTo(0 * s, 2.3 * s);
+    // ── Top center (between ears) ──
+    cat.moveTo(0, 2.8 * s);
 
     // ── Right ear ──
-    cat.quadraticCurveTo(0.2 * s, 2.9 * s, 0.9 * s, 2.8 * s);  // peak
-    cat.quadraticCurveTo(1.3 * s, 2.4 * s, 1.15 * s, 1.9 * s);  // down to side
+    cat.quadraticCurveTo(0.15 * s, 3.5 * s, 1.0 * s, 3.4 * s);   // ear peak
+    cat.quadraticCurveTo(1.5 * s, 3.0 * s, 1.4 * s, 2.4 * s);    // ear inner
 
-    // ── Right side of head / upper body ──
-    cat.quadraticCurveTo(1.6 * s, 1.6 * s, 2.0 * s, 1.1 * s);  // cheek curve out
-    cat.quadraticCurveTo(2.3 * s, 0.6 * s, 2.1 * s, 0.1 * s);  // taper to neck
+    // ── Right cheek ──
+    cat.quadraticCurveTo(1.9 * s, 2.2 * s, 2.4 * s, 1.6 * s);    // cheek out
+    cat.quadraticCurveTo(2.8 * s, 0.8 * s, 2.6 * s, 0.0 * s);    // cheek curve
 
-    // ── Right body ──
-    cat.quadraticCurveTo(2.5 * s, -0.4 * s, 2.4 * s, -0.9 * s); // shoulder
-    cat.quadraticCurveTo(2.1 * s, -1.4 * s, 1.7 * s, -1.8 * s); // belly curve
-    cat.quadraticCurveTo(1.0 * s, -2.1 * s, 0.3 * s, -2.2 * s); // lower belly
+    // ── Right jaw ──
+    cat.quadraticCurveTo(2.4 * s, -0.7 * s, 1.8 * s, -1.3 * s);  // jaw line
+    cat.quadraticCurveTo(1.2 * s, -1.8 * s, 0.5 * s, -2.1 * s);  // lower right
 
-    // ── Bottom (between legs) ──
-    cat.quadraticCurveTo(-0.3 * s, -2.2 * s, -1.0 * s, -2.1 * s); // across
-    cat.quadraticCurveTo(-1.7 * s, -1.8 * s, -2.1 * s, -1.4 * s); // left belly up
+    // ── Chin ──
+    cat.quadraticCurveTo(0.0 * s, -2.5 * s, -0.5 * s, -2.1 * s); // chin point
 
-    // ── Left body ──
-    cat.quadraticCurveTo(-2.4 * s, -0.9 * s, -2.4 * s, -0.4 * s); // left shoulder
-    cat.quadraticCurveTo(-2.2 * s, 0.1 * s, -1.9 * s, 0.6 * s);   // left neck
+    // ── Left jaw ──
+    cat.quadraticCurveTo(-1.2 * s, -1.8 * s, -1.8 * s, -1.3 * s); // lower left
+    cat.quadraticCurveTo(-2.4 * s, -0.7 * s, -2.6 * s, 0.0 * s);  // jaw line
 
-    // ── Left side of head ──
-    cat.quadraticCurveTo(-2.1 * s, 1.1 * s, -1.8 * s, 1.6 * s);   // left cheek
-    cat.quadraticCurveTo(-1.2 * s, 2.2 * s, -0.9 * s, 2.5 * s);   // up to ear base
+    // ── Left cheek ──
+    cat.quadraticCurveTo(-2.8 * s, 0.8 * s, -2.4 * s, 1.6 * s);   // cheek curve
+    cat.quadraticCurveTo(-1.9 * s, 2.2 * s, -1.4 * s, 2.4 * s);   // cheek in
 
     // ── Left ear ──
-    cat.quadraticCurveTo(-0.6 * s, 2.9 * s, -0.1 * s, 2.7 * s);   // left ear peak
-    cat.quadraticCurveTo(0.1 * s, 2.5 * s, 0 * s, 2.3 * s);       // back to top
+    cat.quadraticCurveTo(-1.5 * s, 3.0 * s, -1.0 * s, 3.4 * s);   // ear inner
+    cat.quadraticCurveTo(-0.15 * s, 3.5 * s, 0, 2.8 * s);          // ear peak → center
 
-    // ── Tail: a separate sub-path attached at the right side ──
-    // Start from right-lower body
-    cat.moveTo(2.3 * s, -0.5 * s);
-    cat.quadraticCurveTo(3.4 * s, -0.6 * s, 3.8 * s, -1.2 * s);   // tail out
-    cat.quadraticCurveTo(4.1 * s, -1.8 * s, 3.7 * s, -2.3 * s);   // tail down
-    cat.quadraticCurveTo(3.2 * s, -2.5 * s, 2.8 * s, -2.0 * s);   // tail tip curl
-    cat.quadraticCurveTo(2.6 * s, -1.5 * s, 2.4 * s, -1.2 * s);   // tail return
-    cat.quadraticCurveTo(2.2 * s, -0.9 * s, 2.3 * s, -0.5 * s);   // back to body
-
-    // ── Eye cutouts (subtractive holes using holes array) ──
+    // ── Eye holes ──
     const leftEye = new THREE.Path();
-    leftEye.moveTo(-0.6 * s, 1.4 * s);
-    leftEye.quadraticCurveTo(-0.9 * s, 1.7 * s, -0.6 * s, 1.9 * s);
-    leftEye.quadraticCurveTo(-0.3 * s, 1.7 * s, -0.6 * s, 1.4 * s);
+    leftEye.moveTo(-0.9 * s, 1.5 * s);
+    leftEye.quadraticCurveTo(-1.3 * s, 2.0 * s, -0.9 * s, 2.3 * s);
+    leftEye.quadraticCurveTo(-0.5 * s, 2.0 * s, -0.9 * s, 1.5 * s);
     cat.holes.push(leftEye);
 
     const rightEye = new THREE.Path();
-    rightEye.moveTo(0.6 * s, 1.4 * s);
-    rightEye.quadraticCurveTo(0.9 * s, 1.7 * s, 0.6 * s, 1.9 * s);
-    rightEye.quadraticCurveTo(0.3 * s, 1.7 * s, 0.6 * s, 1.4 * s);
+    rightEye.moveTo(0.9 * s, 1.5 * s);
+    rightEye.quadraticCurveTo(1.3 * s, 2.0 * s, 0.9 * s, 2.3 * s);
+    rightEye.quadraticCurveTo(0.5 * s, 2.0 * s, 0.9 * s, 1.5 * s);
     cat.holes.push(rightEye);
 
-    // ── Nose triangle (small) ──
+    // ── Nose ──
     const nose = new THREE.Path();
-    nose.moveTo(0 * s, 0.85 * s);
-    nose.lineTo(0.15 * s, 0.65 * s);
-    nose.lineTo(-0.15 * s, 0.65 * s);
+    nose.moveTo(0, 0.6 * s);
+    nose.lineTo(0.18 * s, 0.35 * s);
+    nose.lineTo(-0.18 * s, 0.35 * s);
     nose.closePath();
     cat.holes.push(nose);
+
+    // ── Whisker dots (small circles) ──
+    [[-1.6, 0.8], [-1.4, 0.6], [-1.2, 0.4], [1.6, 0.8], [1.4, 0.6], [1.2, 0.4]].forEach(([wx, wy]) => {
+        const whisker = new THREE.Path();
+        whisker.absarc(wx * s, wy * s, 0.06 * s, 0, Math.PI * 2, true);
+        cat.holes.push(whisker);
+    });
 
     return cat;
 }
 
-// ─── Neon Color Palette ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEON COLOR PALETTE
+// ═══════════════════════════════════════════════════════════════════════════════
 //
-// Each floor level gets a distinct neon color for its edge rails.
-// Colors cycle if there are more levels than palette entries.
+// Each floor level uses one neon color. Colors cycle if there are more levels.
 
 const NEON_PALETTE = [
-    { name: 'Cyan',     hex: '#00FFFF', rgb: [0.0, 1.0, 1.0] },
-    { name: 'Magenta',  hex: '#FF00FF', rgb: [1.0, 0.0, 1.0] },
-    { name: 'Lime',     hex: '#39FF14', rgb: [0.22, 1.0, 0.08] },
-    { name: 'Amber',    hex: '#FFBF00', rgb: [1.0, 0.75, 0.0] },
-    { name: 'HotPink',  hex: '#FF69B4', rgb: [1.0, 0.41, 0.71] },
-    { name: 'ElectricBlue', hex: '#7DF9FF', rgb: [0.49, 0.98, 1.0] },
-    { name: 'Lava',     hex: '#FF4500', rgb: [1.0, 0.27, 0.0] },
-    { name: 'Violet',   hex: '#8B00FF', rgb: [0.55, 0.0, 1.0] },
+    { name: 'Electric Cyan',     hex: '#00FFFF', rgb: [0.0, 1.0, 1.0],   level: 'Floor 1' },
+    { name: 'Neon Magenta',      hex: '#FF00FF', rgb: [1.0, 0.0, 1.0],   level: 'Floor 2' },
+    { name: 'Toxic Lime',        hex: '#39FF14', rgb: [0.22, 1.0, 0.08], level: 'Floor 3' },
+    { name: 'Burning Amber',     hex: '#FFBF00', rgb: [1.0, 0.75, 0.0],  level: 'Floor 4' },
+    { name: 'Hot Pink',          hex: '#FF69B4', rgb: [1.0, 0.41, 0.71], level: 'Floor 5' },
+    { name: 'Electric Blue',     hex: '#7DF9FF', rgb: [0.49, 0.98, 1.0], level: 'Floor 6' },
+    { name: 'Molten Lava',       hex: '#FF4500', rgb: [1.0, 0.27, 0.0],  level: 'Floor 7' },
+    { name: 'Ultra Violet',      hex: '#8B00FF', rgb: [0.55, 0.0, 1.0],  level: 'Floor 8' },
 ];
 
-// ─── Core API ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// CORE: CREATE CAT-HEAD GAME MAP
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Create the full multi-level glass cat floor system and add it to a scene.
+ * Create the full multi-level cat-head Pac-Man game map.
+ * Includes glass floors, neon rails, maze walls, dots, pellets, spawns, and legend.
  *
- * @param {THREE.Scene} scene - The Three.js scene to add floors to
- * @param {object} [opts] - Configuration options
- * @param {number} [opts.levels=4] - Number of glass floor levels
- * @param {number} [opts.spacing=1.5] - Vertical spacing between levels
- * @param {number} [opts.baseY=0] - Y position of the bottom floor
- * @param {number} [opts.scale=3.0] - Uniform scale of the cat shape
- * @param {number} [opts.glassOpacity=0.12] - Opacity of the glass floors
- * @param {number} [opts.railThickness=0.03] - Thickness of neon edge rails
- * @param {boolean} [opts.animated=true] - Enable subtle floating/glow animations
- * @returns {{ group: THREE.Group, floors: object[], rails: object[] }}
+ * @param {THREE.Scene} scene
+ * @param {object} [opts]
+ * @param {number} [opts.levels=4]        - Number of glass floor levels
+ * @param {number} [opts.spacing=1.8]     - Vertical spacing between levels
+ * @param {number} [opts.baseY=-3]        - Y position of bottom floor
+ * @param {number} [opts.scale=3.0]       - Cat head shape scale
+ * @param {number} [opts.glassOpacity=0.10] - Glass floor opacity
+ * @param {boolean} [opts.showMaze=true]  - Render maze walls on floors
+ * @param {boolean} [opts.showDots=true]  - Render dot collectibles
+ * @param {boolean} [opts.showLegend=true] - Render floating legend
+ * @param {boolean} [opts.animated=true]  - Enable animations
+ * @returns {{ group, floors, legend, levelData: string[][] }}
  */
-export function createCatFloorSystem(scene, opts = {}) {
+export function createCatHeadMap(scene, opts = {}) {
     const {
         levels = 4,
-        spacing = 1.5,
-        baseY = 0,
+        spacing = 1.8,
+        baseY = -3,
         scale = 3.0,
-        glassOpacity = 0.12,
-        railThickness = 0.03,
+        glassOpacity = 0.10,
+        showMaze = true,
+        showDots = true,
+        showLegend = true,
         animated = true,
     } = opts;
 
-    const catShape = createCatShape(scale);
-    const catPoints = catShape.getPoints(120); // 120 pts for smooth rails
+    const catShape = createCatHeadShape(scale);
+    const catPoints = catShape.getPoints(150);
+    const grid = CAT_HEAD_LEVEL;
+    const gridRows = grid.length;
+    const gridCols = Math.max(...grid.map(r => r.length));
+    const cellSize = 0.32 * scale;
 
-    // ── Floor Group ──
+    // ── Root Group ──
     const group = new THREE.Group();
-    group.name = 'cat-glass-floors';
+    group.name = 'cat-head-pacman-map';
     const floorData = [];
 
+    // ── Shared geometry instances (reused per floor) ──
+    const wallGeom = new THREE.BoxGeometry(cellSize * 0.85, cellSize * 0.85, 0.12);
+    const dotGeom = new THREE.SphereGeometry(cellSize * 0.12, 8, 6);
+    const pelletGeom = new THREE.SphereGeometry(cellSize * 0.22, 12, 8);
+    const spawnDiscGeom = new THREE.CylinderGeometry(cellSize * 0.25, cellSize * 0.25, 0.05, 24);
+
+    // ── Build each floor level ──
     for (let i = 0; i < levels; i++) {
         const y = baseY + i * spacing;
-        const neonColor = NEON_PALETTE[i % NEON_PALETTE.length];
+        const neon = NEON_PALETTE[i % NEON_PALETTE.length];
 
-        // ── Glass floor pane ──
-        const shapeGeom = new THREE.ShapeGeometry(catShape);
-        // Slight extrude for thickness (glass has depth)
-        const extrudeSettings = { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3 };
+        // ── Glass Floor Pane ──
+        const extrudeSettings = {
+            depth: 0.06, bevelEnabled: true,
+            bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3,
+        };
         const floorGeom = new THREE.ExtrudeGeometry(catShape, extrudeSettings);
-        floorGeom.translate(0, 0, -0.03); // center the thickness
+        floorGeom.translate(0, 0, -0.03);
 
         const floorMat = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(...neonColor.rgb),
-            emissive: new THREE.Color(...neonColor.rgb),
-            emissiveIntensity: 0.25,
+            color: new THREE.Color(...neon.rgb),
+            emissive: new THREE.Color(...neon.rgb),
+            emissiveIntensity: 0.20,
             transparent: true,
             opacity: glassOpacity,
             side: THREE.DoubleSide,
             specular: 0xffffff,
-            shininess: 100,
-            depthWrite: false, // glass shouldn't block other glass below it
+            shininess: 120,
+            depthWrite: false,
         });
-
         const floorMesh = new THREE.Mesh(floorGeom, floorMat);
         floorMesh.position.set(0, y, 0);
         floorMesh.renderOrder = i;
-        floorMesh.userData = {
-            level: i,
-            color: neonColor,
-            baseY: y,
-            animated,
-            animPhase: Math.random() * Math.PI * 2, // unique phase per level
-        };
+        floorMesh.userData = { level: i, animated, baseY: y, animPhase: Math.random() * Math.PI * 2 };
         group.add(floorMesh);
 
-        // ── Neon edge rails ──
-        // Top rail (above the glass)
-        const topRailGeom = new THREE.BufferGeometry().setFromPoints(
-            catPoints.map(p => new THREE.Vector3(p.x, p.y, 0.04))
+        // ── Neon Edge Rails (top + bottom) ──
+        const closed = [...catPoints, catPoints[0]];
+        const topRail = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(closed.map(p => new THREE.Vector3(p.x, p.y, 0.04))),
+            new THREE.LineBasicMaterial({ color: neon.hex, transparent: true, opacity: 0.95 })
         );
-        // Close the loop
-        const topClosed = [...catPoints, catPoints[0]];
-        topRailGeom.setFromPoints(
-            topClosed.map(p => new THREE.Vector3(p.x, p.y, 0.04))
-        );
+        topRail.position.set(0, y, 0);
+        topRail.renderOrder = i + 0.5;
+        group.add(topRail);
 
-        const topRailLine = new THREE.Line(
-            topRailGeom,
-            new THREE.LineBasicMaterial({
-                color: neonColor.hex,
-                linewidth: 1,
-                transparent: true,
-                opacity: 0.9,
-            })
+        const botRail = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(closed.map(p => new THREE.Vector3(p.x, p.y, -0.04))),
+            new THREE.LineBasicMaterial({ color: neon.hex, transparent: true, opacity: 0.45 })
         );
-        topRailLine.position.set(0, y, 0);
-        topRailLine.renderOrder = i + 0.5;
-        group.add(topRailLine);
+        botRail.position.set(0, y, 0);
+        botRail.renderOrder = i + 0.5;
+        group.add(botRail);
 
-        // Bottom rail (below the glass for 3D depth)
-        const bottomRailGeom = new THREE.BufferGeometry().setFromPoints(
-            topClosed.map(p => new THREE.Vector3(p.x, p.y, -0.04))
-        );
-        const bottomRailLine = new THREE.Line(
-            bottomRailGeom,
-            new THREE.LineBasicMaterial({
-                color: neonColor.hex,
-                linewidth: 1,
-                transparent: true,
-                opacity: 0.5,
-            })
-        );
-        bottomRailLine.position.set(0, y, 0);
-        bottomRailLine.renderOrder = i + 0.5;
-        group.add(bottomRailLine);
-
-        // ── Vertical pillars / connecting struts at key points ──
-        // Place small glowing pillars at corners of the cat
-        const pillarPoints = [
-            [-0.9 * scale, 2.5 * scale],  // left ear
-            [0.9 * scale, 2.5 * scale],   // right ear
-            [-2.0 * scale, 0.3 * scale],  // left body
-            [2.0 * scale, 0.3 * scale],   // right body
-            [-1.5 * scale, -1.8 * scale], // left bottom
-            [1.5 * scale, -1.8 * scale],  // right bottom
-            [3.7 * scale, -2.2 * scale],  // tail tip
+        // ── Neon Pillars + Discs at key cat-head corners ──
+        const pillarPts = [
+            [-1.0 * scale, 3.0 * scale], [1.0 * scale, 3.0 * scale],   // ears
+            [-2.5 * scale, 0.3 * scale], [2.5 * scale, 0.3 * scale],   // cheeks
+            [-1.2 * scale, -1.5 * scale], [1.2 * scale, -1.5 * scale], // jaw
+            [0, -2.3 * scale],                                          // chin
         ];
-
-        const pillarGeom = new THREE.CylinderGeometry(0.04, 0.04, spacing, 6);
+        const pillarGeom = new THREE.CylinderGeometry(0.05, 0.05, spacing, 8);
         const pillarMat = new THREE.MeshPhongMaterial({
-            color: neonColor.hex,
-            emissive: neonColor.hex,
-            emissiveIntensity: 0.6,
-            transparent: true,
-            opacity: 0.5,
-            depthWrite: false,
+            color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.5,
+            transparent: true, opacity: 0.45, depthWrite: false,
         });
-
-        pillarPoints.forEach(([px, py]) => {
-            const pillar = new THREE.Mesh(pillarGeom, pillarMat);
-            pillar.position.set(px, y + spacing / 2, 0);
-            pillar.renderOrder = i + 0.3;
-            pillar.userData = { level: i, animated, baseY: y + spacing / 2 };
-            group.add(pillar);
-        });
-
-        // ── Glow discs at each pillar base/top ──
-        const discGeom = new THREE.CylinderGeometry(0.08, 0.12, 0.03, 16);
+        const discGeom = new THREE.CylinderGeometry(0.10, 0.14, 0.04, 20);
         const discMat = new THREE.MeshPhongMaterial({
-            color: neonColor.hex,
-            emissive: neonColor.hex,
-            emissiveIntensity: 0.8,
-            transparent: true,
-            opacity: 0.7,
-            depthWrite: false,
+            color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.7,
+            transparent: true, opacity: 0.6, depthWrite: false,
         });
 
-        pillarPoints.forEach(([px, py]) => {
-            const topDisc = new THREE.Mesh(discGeom, discMat);
-            topDisc.position.set(px, y + spacing, 0);
-            topDisc.renderOrder = i + 0.4;
-            group.add(topDisc);
+        pillarPts.forEach(([px, py]) => {
+            const p = new THREE.Mesh(pillarGeom, pillarMat);
+            p.position.set(px, y + spacing / 2, 0);
+            p.renderOrder = i + 0.3;
+            p.userData = { level: i, animated, baseY: y + spacing / 2 };
+            group.add(p);
 
-            const bottomDisc = new THREE.Mesh(discGeom, discMat);
-            bottomDisc.position.set(px, y, 0);
-            bottomDisc.renderOrder = i + 0.4;
-            group.add(bottomDisc);
+            const td = new THREE.Mesh(discGeom, discMat);
+            td.position.set(px, y + spacing, 0);
+            td.renderOrder = i + 0.4;
+            group.add(td);
+
+            const bd = new THREE.Mesh(discGeom, discMat);
+            bd.position.set(px, y, 0);
+            bd.renderOrder = i + 0.4;
+            group.add(bd);
         });
 
-        // ── Inner glow mesh (subtle floor fill glow, slightly larger) ──
-        const glowGeom = new THREE.ShapeGeometry(catShape);
-        const glowMat = new THREE.MeshPhongMaterial({
-            color: new THREE.Color(...neonColor.rgb),
-            emissive: new THREE.Color(...neonColor.rgb),
-            emissiveIntensity: 0.15,
-            transparent: true,
-            opacity: 0.04,
-            side: THREE.DoubleSide,
-            depthWrite: false,
-        });
-        const glowMesh = new THREE.Mesh(glowGeom, glowMat);
+        // ── Inner Glow Fill ──
+        const glowMesh = new THREE.Mesh(
+            new THREE.ShapeGeometry(catShape),
+            new THREE.MeshPhongMaterial({
+                color: new THREE.Color(...neon.rgb),
+                emissive: new THREE.Color(...neon.rgb),
+                emissiveIntensity: 0.12,
+                transparent: true, opacity: 0.03,
+                side: THREE.DoubleSide, depthWrite: false,
+            })
+        );
         glowMesh.position.set(0, y, 0.01);
         glowMesh.renderOrder = i - 0.1;
         group.add(glowMesh);
 
-        floorData.push({
-            level: i,
-            y,
-            color: neonColor,
-            floor: floorMesh,
-            glow: glowMesh,
-        });
-    }
+        // ═══════════════════════════════════════════════════════════════
+        // PAC-MAN GAME ELEMENTS (Maze walls, dots, pellets, spawns)
+        // ═══════════════════════════════════════════════════════════════
 
-    scene.add(group);
+        const offsetX = -(gridCols / 2) * cellSize + cellSize / 2;
+        const offsetY = -(gridRows / 2) * cellSize + cellSize / 2;
 
-    // Return metadata for animation updates
-    return {
-        group,
-        floors: floorData,
-        levels,
-        spacing,
-        baseY,
-        animated,
-    };
-}
+        for (let row = 0; row < gridRows; row++) {
+            const line = grid[row];
+            for (let col = 0; col < line.length; col++) {
+                const ch = line[col];
+                const wx = offsetX + col * cellSize;
+                const wy = offsetY + row * cellSize;
 
-/**
- * Update animations for the cat floor system. Call this in your render loop.
- *
- * Animations include:
- *   - Gentle floating/bobbing per level
- *   - Glow pulsing on emissive materials
- *
- * @param {object} floorSystem - The object returned by createCatFloorSystem()
- * @param {number} deltaTime - Seconds since last frame
- * @param {number} [elapsed=0] - Total elapsed seconds (for continuous animation)
- */
-export function updateCatFloors(floorSystem, deltaTime, elapsed = 0) {
-    if (!floorSystem || !floorSystem.animated) return;
+                if (ch === '#') {
+                    // ── Maze Wall (glass-like with neon tint) ──
+                    if (showMaze) {
+                        const wall = new THREE.Mesh(wallGeom, new THREE.MeshPhongMaterial({
+                            color: new THREE.Color(...neon.rgb),
+                            emissive: new THREE.Color(...neon.rgb),
+                            emissiveIntensity: 0.08,
+                            transparent: true,
+                            opacity: 0.18,
+                            side: THREE.DoubleSide,
+                            depthWrite: false,
+                        }));
+                        wall.position.set(wx, wy, y + 0.06);
+                        wall.renderOrder = i + 0.1;
+                        wall.userData = { level: i, animated, baseY: wy, isWall: true };
+                        group.add(wall);
 
-    const { group } = floorSystem;
+                        // Wall edge neon outline
+                        const hw = cellSize * 0.42;
+                        const edgePts = [
+                            new THREE.Vector3(wx - hw, wy - hw, y + 0.12),
+                            new THREE.Vector3(wx + hw, wy - hw, y + 0.12),
+                            new THREE.Vector3(wx + hw, wy + hw, y + 0.12),
+                            new THREE.Vector3(wx - hw, wy + hw, y + 0.12),
+                            new THREE.Vector3(wx - hw, wy - hw, y + 0.12),
+                        ];
+                        const edgeLine = new THREE.Line(
+                            new THREE.BufferGeometry().setFromPoints(edgePts),
+                            new THREE.LineBasicMaterial({ color: neon.hex, transparent: true, opacity: 0.35 })
+                        );
+                        edgeLine.renderOrder = i + 0.15;
+                        group.add(edgeLine);
+                    }
+                } else if (ch === '.' && showDots) {
+                    // ── Collectible Dot ──
+                    const dot = new THREE.Mesh(dotGeom, new THREE.MeshPhongMaterial({
+                        color: 0xFFD9B9,
+                        emissive: 0xFFD9B9,
+                        emissiveIntensity: 0.15,
+                    }));
+                    dot.position.set(wx, wy, y + 0.05);
+                    dot.renderOrder = i + 0.05;
+                    dot.userData = {
+                        level: i, isDot: true, collected: false,
+                        baseY: wy, animated, animPhase: Math.random() * Math.PI * 2,
+                    };
+                    group.add(dot);
+                } else if (ch === 'o' && showDots) {
+                    // ── Power Pellet ──
+                    const pellet = new THREE.Mesh(pelletGeom, new THREE.MeshPhongMaterial({
+                        color: 0xFFD9B9,
+                        emissive: 0xFFD9B9,
+                        emissiveIntensity: 0.30,
+                    }));
+                    pellet.position.set(wx, wy, y + 0.07);
+                    pellet.renderOrder = i + 0.06;
+                    pellet.userData = {
+                        level: i, isPellet: true, collected: false,
+                        baseY: wy, animated, animPhase: Math.random() * Math.PI * 2,
+                    };
+                    group.add(pellet);
 
-    group.children.forEach(child => {
-        if (!child.userData || !child.userData.animated) return;
+                    // Pellet glow ring
+                    const ring = new THREE.Mesh(
+                        new THREE.TorusGeometry(cellSize * 0.23, cellSize * 0.03, 8, 12),
+                        new THREE.MeshPhongMaterial({
+                            color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.5,
+                            transparent: true, opacity: 0.3, depthWrite: false,
+                        })
+                    );
+                    ring.position.set(wx, wy, y + 0.07);
+                    ring.renderOrder = i + 0.055;
+                    ring.userData = { level: i, animated, baseY: wy, animPhase: Math.random() * Math.PI * 2 };
+                    group.add(ring);
+                } else if (ch === 'P') {
+                    // ── Pac-Man Spawn Marker ──
+                    const spawnDisc = new THREE.Mesh(spawnDiscGeom, new THREE.MeshPhongMaterial({
+                        color: 0xFFD700, emissive: 0xFFD700, emissiveIntensity: 0.6,
+                        transparent: true, opacity: 0.7,
+                    }));
+                    spawnDisc.position.set(wx, wy, y + 0.06);
+                    spawnDisc.renderOrder = i + 0.08;
+                    spawnDisc.userData = { level: i, isSpawn: true, spawnType: 'pacman', animated, baseY: wy };
+                    group.add(spawnDisc);
 
-        const { level, color, animPhase, baseY } = child.userData;
-        const t = elapsed + animPhase;
+                    // Spawn glow pillar
+                    const spPillar = new THREE.Mesh(
+                        new THREE.CylinderGeometry(cellSize * 0.08, cellSize * 0.08, 0.3, 12),
+                        new THREE.MeshPhongMaterial({
+                            color: 0xFFD700, emissive: 0xFFD700, emissiveIntensity: 0.7,
+                            transparent: true, opacity: 0.5, depthWrite: false,
+                        })
+                    );
+                    spPillar.position.set(wx, wy, y + 0.15);
+                    spPillar.renderOrder = i + 0.09;
+                    spPillar.userData = { level: i, animated, baseY: wy + 0.15 };
+                    group.add(spPillar);
+                } else if (ch === 'G') {
+                    // ── Ghost Spawn Marker ──
+                    const gDisc = new THREE.Mesh(spawnDiscGeom, new THREE.MeshPhongMaterial({
+                        color: 0xFF4444, emissive: 0xFF4444, emissiveIntensity: 0.5,
+                        transparent: true, opacity: 0.6,
+                    }));
+                    gDisc.position.set(wx, wy, y + 0.06);
+                    gDisc.renderOrder = i + 0.08;
+                    gDisc.userData = { level: i, isSpawn: true, spawnType: 'ghost', animated, baseY: wy };
+                    group.add(gDisc);
 
-        // Float the floor meshes gently
-        if (child.isMesh && child.userData.baseY !== undefined) {
-            const floatOffset = Math.sin(t * 0.6 + level * 0.7) * 0.06;
-            child.position.y = baseY + floatOffset;
-
-            // Pulse emissive intensity for a breathing glow
-            const pulse = 0.7 + 0.3 * Math.sin(t * 1.5 + level * 1.2);
-            if (child.material && child.material.emissiveIntensity !== undefined) {
-                // Only pulse if it's a glow-related material (not structural)
-                if (child.material.transparent && child.material.opacity < 0.5) {
-                    child.material.emissiveIntensity = child.material.emissiveIntensity > 0.5
-                        ? 0.5 + 0.3 * Math.sin(t * 2 + level)
-                        : 0.12 + 0.08 * Math.sin(t * 1.5 + level * 1.2);
+                    const gPillar = new THREE.Mesh(
+                        new THREE.CylinderGeometry(cellSize * 0.06, cellSize * 0.06, 0.25, 12),
+                        new THREE.MeshPhongMaterial({
+                            color: 0xFF4444, emissive: 0xFF4444, emissiveIntensity: 0.6,
+                            transparent: true, opacity: 0.45, depthWrite: false,
+                        })
+                    );
+                    gPillar.position.set(wx, wy, y + 0.12);
+                    gPillar.renderOrder = i + 0.09;
+                    gPillar.userData = { level: i, animated, baseY: wy + 0.12 };
+                    group.add(gPillar);
                 }
             }
         }
 
-        // Pulse opacity on the glow mesh
-        if (child.isMesh && child.material && child.material.opacity < 0.1 && child.material.emissiveIntensity < 0.3) {
-            const glowPulse = 0.03 + 0.03 * Math.sin(t * 2 + level);
-            child.material.opacity = glowPulse;
-        }
+        floorData.push({ level: i, y, color: neon, floor: floorMesh, glow: glowMesh });
+    }
+
+    scene.add(group);
+
+    // ── Legend ──
+    let legendGroup = null;
+    if (showLegend) {
+        legendGroup = createLegend(levels, spacing, baseY, scale);
+        scene.add(legendGroup);
+    }
+
+    return { group, floors: floorData, legend: legendGroup, levels, spacing, baseY, animated };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FLOATING LEGEND HUD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Create a floating legend showing each floor's color and purpose.
+ * Rendered as 3D text panels using sprites (canvas-based).
+ *
+ * @param {number} levels
+ * @param {number} spacing
+ * @param {number} baseY
+ * @param {number} scale
+ * @returns {THREE.Group}
+ */
+function createLegend(levels, spacing, baseY, scale) {
+    const lg = new THREE.Group();
+    lg.name = 'cat-head-legend';
+
+    const legendX = 3.5 * scale;
+    const legendZ = 0.1;
+
+    for (let i = 0; i < levels; i++) {
+        const neon = NEON_PALETTE[i % NEON_PALETTE.length];
+        const y = baseY + i * spacing;
+
+        // Color swatch (small glowing disc)
+        const swatch = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.18, 0.18, 0.03, 24),
+            new THREE.MeshPhongMaterial({
+                color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.8,
+                transparent: true, opacity: 0.8, depthWrite: false,
+            })
+        );
+        swatch.position.set(legendX, y, legendZ);
+        swatch.renderOrder = 999;
+        lg.add(swatch);
+
+        // Label via 3D sprite (canvas text)
+        const labelSprite = makeTextSprite(
+            `${neon.level}: ${neon.name}`,
+            neon.hex, 256, 48, 20
+        );
+        labelSprite.position.set(legendX + 0.5, y, legendZ);
+        labelSprite.scale.set(1.6, 0.3, 1);
+        labelSprite.renderOrder = 999;
+        lg.add(labelSprite);
+
+        // Connecting line from swatch to floor rail
+        const connLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(legendX + 0.2, y, legendZ),
+                new THREE.Vector3(2.9 * scale, y, 0.04),
+            ]),
+            new THREE.LineBasicMaterial({ color: neon.hex, transparent: true, opacity: 0.3 })
+        );
+        connLine.renderOrder = 998;
+        lg.add(connLine);
+    }
+
+    // ── Title ──
+    const titleSprite = makeTextSprite(
+        '🐱 CAT-HEAD MAP', '#FFD700', 512, 56, 26
+    );
+    titleSprite.position.set(legendX + 0.3, baseY + levels * spacing + 0.6, legendZ);
+    titleSprite.scale.set(2.2, 0.3, 1);
+    titleSprite.renderOrder = 999;
+    lg.add(titleSprite);
+
+    // ── Legend key items ──
+    const keyY = baseY + levels * spacing;
+    const keyItems = [
+        { label: '🟡 = Dot', color: '#FFD9B9' },
+        { label: '⭕ = Power Pellet', color: '#FFD700' },
+        { label: '⬜ = Glass Wall', color: '#FFFFFF' },
+        { label: '🔴 = Ghost Spawn', color: '#FF4444' },
+    ];
+
+    keyItems.forEach((item, ki) => {
+        const ks = makeTextSprite(item.label, item.color, 256, 32, 14);
+        ks.position.set(legendX + 0.3, keyY - 0.3 * (ki + 1), legendZ);
+        ks.scale.set(1.2, 0.2, 1);
+        ks.renderOrder = 999;
+        lg.add(ks);
     });
+
+    return lg;
 }
 
 /**
- * Remove the cat floor system from the scene and dispose all geometries/materials.
- *
- * @param {THREE.Scene} scene - The scene the floors were added to
- * @param {object} floorSystem - The object returned by createCatFloorSystem()
+ * Create a text sprite using canvas.
+ * @param {string} text
+ * @param {string} color - CSS color
+ * @param {number} cw - canvas width
+ * @param {number} ch - canvas height
+ * @param {number} fontSize
+ * @returns {THREE.Sprite}
  */
-export function removeCatFloors(scene, floorSystem) {
-    if (!floorSystem || !floorSystem.group) return;
+function makeTextSprite(text, color, cw, ch, fontSize) {
+    const canvas = document.createElement('canvas');
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.font = `bold ${fontSize}px "Press Start 2P", "Courier New", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cw / 2, ch / 2);
 
-    const { group } = floorSystem;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    const spriteMat = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+    });
+    return new THREE.Sprite(spriteMat);
+}
 
-    // Recursively dispose and remove
-    group.traverse(child => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-            if (Array.isArray(child.material)) {
-                child.material.forEach(m => m.dispose());
-            } else {
-                child.material.dispose();
+// ═══════════════════════════════════════════════════════════════════════════════
+// ANIMATION UPDATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Update animations for the cat-head game map. Call in your render loop.
+ *
+ * @param {object} map - The object returned by createCatHeadMap()
+ * @param {number} deltaTime - Seconds since last frame
+ * @param {number} [elapsed=0] - Total elapsed seconds
+ */
+export function updateCatHeadMap(map, deltaTime, elapsed = 0) {
+    if (!map || !map.animated) return;
+
+    const { group } = map;
+    group.children.forEach(child => {
+        if (!child.userData || !child.userData.animated) return;
+        const { level, animPhase, baseY } = child.userData;
+        const t = elapsed + animPhase;
+
+        // Float floor meshes and dot-like elements
+        if (child.isMesh && baseY !== undefined) {
+            const floatOff = Math.sin(t * 0.6 + level * 0.7) * 0.06;
+            child.position.y = baseY + floatOff;
+
+            // Pulsing glow on transparent materials
+            if (child.material && child.material.emissiveIntensity !== undefined) {
+                if (child.material.transparent && child.material.opacity < 0.5) {
+                    child.material.emissiveIntensity =
+                        child.material.emissiveIntensity > 0.4
+                            ? 0.4 + 0.2 * Math.sin(t * 1.5 + level)
+                            : 0.10 + 0.06 * Math.sin(t * 1.2 + level);
+                }
             }
+        }
+
+        // Pulsing dots
+        if (child.userData.isDot && !child.userData.collected) {
+            const s = 0.85 + 0.15 * Math.sin(t * 3 + child.userData.animPhase);
+            child.scale.setScalar(s);
+        }
+
+        // Pulsing pellets
+        if (child.userData.isPellet && !child.userData.collected) {
+            const s = 0.9 + 0.15 * Math.sin(t * 2.5 + child.userData.animPhase);
+            child.scale.setScalar(s);
+        }
+
+        // Rotating spawn markers
+        if (child.userData.isSpawn) {
+            child.rotation.z += deltaTime * 1.5;
         }
     });
 
-    scene.remove(group);
-    floorSystem.group = null;
-    floorSystem.floors = [];
+    // Legend sway
+    if (map.legend) {
+        map.legend.position.x = 3.0 + Math.sin(elapsed * 0.4) * 0.15;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CLEANUP
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Remove the cat-head map from scene and dispose all resources.
+ *
+ * @param {THREE.Scene} scene
+ * @param {object} map - The object returned by createCatHeadMap()
+ */
+export function removeCatHeadMap(scene, map) {
+    if (!map || !map.group) return;
+    const { group, legend } = map;
+
+    [group, legend].forEach(g => {
+        if (!g) return;
+        g.traverse(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+                } else {
+                    if (child.material.map) child.material.map.dispose();
+                    child.material.dispose();
+                }
+            }
+        });
+        scene.remove(g);
+    });
+
+    map.group = null;
+    map.legend = null;
+    map.floors = [];
 }
 
 /**
  * Get a neon color from the palette by index.
- * Useful for coordinating other scene elements with floor colors.
- *
  * @param {number} index
- * @returns {{ name: string, hex: string, rgb: number[] }}
+ * @returns {{ name: string, hex: string, rgb: number[], level: string }}
  */
 export function getNeonColor(index) {
     return NEON_PALETTE[index % NEON_PALETTE.length];
 }
+
+// ─── Legacy API (backward-compatible with previous floors.js) ────────────────
+export { createCatHeadMap as createCatFloorSystem };
+export { updateCatHeadMap as updateCatFloors };
+export { removeCatHeadMap as removeCatFloors };
