@@ -168,12 +168,14 @@ const NEON_PALETTE = [
  * @param {THREE.Scene} scene
  * @param {object} [opts]
  * @param {number} [opts.levels=4]        - Number of glass floor levels
- * @param {number} [opts.spacing=1.8]     - Vertical spacing between levels
+ * @param {number} [opts.spacing=3.0]     - Vertical spacing between levels (jump-friendly gap)
  * @param {number} [opts.baseY=-3]        - Y position of bottom floor
  * @param {number} [opts.scale=3.0]       - Cat head shape scale
  * @param {number} [opts.glassOpacity=0.10] - Glass floor opacity
+ * @param {number} [opts.rampLength=2.5]  - Horizontal length of connecting ramps
  * @param {boolean} [opts.showMaze=true]  - Render maze walls on floors
  * @param {boolean} [opts.showDots=true]  - Render dot collectibles
+ * @param {boolean} [opts.showRamps=true] - Render connecting ramps between floors
  * @param {boolean} [opts.showLegend=true] - Render floating legend
  * @param {boolean} [opts.animated=true]  - Enable animations
  * @returns {{ group, floors, legend, levelData: string[][] }}
@@ -181,12 +183,14 @@ const NEON_PALETTE = [
 export function createCatHeadMap(scene, opts = {}) {
     const {
         levels = 4,
-        spacing = 1.8,
+        spacing = 3.0,
         baseY = -3,
         scale = 3.0,
         glassOpacity = 0.10,
+        rampLength = 2.5,
         showMaze = true,
         showDots = true,
+        showRamps = true,
         showLegend = true,
         animated = true,
     } = opts;
@@ -196,18 +200,22 @@ export function createCatHeadMap(scene, opts = {}) {
     const grid = CAT_HEAD_LEVEL;
     const gridRows = grid.length;
     const gridCols = Math.max(...grid.map(r => r.length));
-    const cellSize = 0.32 * scale;
+    // Scale grid cells so the maze fits within the cat-head silhouette
+    // (cat shape is ~10 units wide at scale=1, so scale*5.0 gives breathing room)
+    const cellSize = (scale * 5.0) / gridCols;
 
     // ── Root Group ──
     const group = new THREE.Group();
     group.name = 'cat-head-pacman-map';
     const floorData = [];
 
-    // ── Shared geometry instances (reused per floor) ──
+    // ── Shared geometry instances (reused per floor for GPU memory efficiency) ──
     const wallGeom = new THREE.BoxGeometry(cellSize * 0.85, cellSize * 0.85, 0.12);
     const dotGeom = new THREE.SphereGeometry(cellSize * 0.12, 8, 6);
     const pelletGeom = new THREE.SphereGeometry(cellSize * 0.22, 12, 8);
     const spawnDiscGeom = new THREE.CylinderGeometry(cellSize * 0.25, cellSize * 0.25, 0.05, 24);
+    const pillarGeom = new THREE.CylinderGeometry(0.05, 0.05, spacing, 8);
+    const discGeom = new THREE.CylinderGeometry(0.10, 0.14, 0.04, 20);
 
     // ── Build each floor level ──
     for (let i = 0; i < levels; i++) {
@@ -236,7 +244,13 @@ export function createCatHeadMap(scene, opts = {}) {
         const floorMesh = new THREE.Mesh(floorGeom, floorMat);
         floorMesh.position.set(0, y, 0);
         floorMesh.renderOrder = i;
-        floorMesh.userData = { level: i, animated, baseY: y, animPhase: Math.random() * Math.PI * 2 };
+        const floorBaseColor = new THREE.Color(neon.hex);
+        const floorBaseHSL = { h: 0, s: 0, l: 0 };
+        floorBaseColor.getHSL(floorBaseHSL);
+        floorMesh.userData = {
+            level: i, animated, baseY: y, animPhase: Math.random() * Math.PI * 2,
+            baseHue: floorBaseHSL.h, baseSat: floorBaseHSL.s, baseLight: floorBaseHSL.l,
+        };
         group.add(floorMesh);
 
         // ── Neon Edge Rails (top + bottom) ──
@@ -247,6 +261,7 @@ export function createCatHeadMap(scene, opts = {}) {
         );
         topRail.position.set(0, y, 0);
         topRail.renderOrder = i + 0.5;
+        topRail.userData = { level: i, isRail: true, baseOpacity: 0.95, animPhase: Math.random() * Math.PI * 2 };
         group.add(topRail);
 
         const botRail = new THREE.Line(
@@ -255,6 +270,7 @@ export function createCatHeadMap(scene, opts = {}) {
         );
         botRail.position.set(0, y, 0);
         botRail.renderOrder = i + 0.5;
+        botRail.userData = { level: i, isRail: true, baseOpacity: 0.45, animPhase: Math.random() * Math.PI * 2 };
         group.add(botRail);
 
         // ── Neon Pillars + Discs at key cat-head corners ──
@@ -264,12 +280,10 @@ export function createCatHeadMap(scene, opts = {}) {
             [-1.2 * scale, -1.5 * scale], [1.2 * scale, -1.5 * scale], // jaw
             [0, -2.3 * scale],                                          // chin
         ];
-        const pillarGeom = new THREE.CylinderGeometry(0.05, 0.05, spacing, 8);
         const pillarMat = new THREE.MeshPhongMaterial({
             color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.5,
             transparent: true, opacity: 0.45, depthWrite: false,
         });
-        const discGeom = new THREE.CylinderGeometry(0.10, 0.14, 0.04, 20);
         const discMat = new THREE.MeshPhongMaterial({
             color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.7,
             transparent: true, opacity: 0.6, depthWrite: false,
@@ -312,6 +326,7 @@ export function createCatHeadMap(scene, opts = {}) {
         // PAC-MAN GAME ELEMENTS (Maze walls, dots, pellets, spawns)
         // ═══════════════════════════════════════════════════════════════
 
+        // Center the grid over the cat shape. Row 0 = top of grid = highest Y.
         const offsetX = -(gridCols / 2) * cellSize + cellSize / 2;
         const offsetY = -(gridRows / 2) * cellSize + cellSize / 2;
 
@@ -320,7 +335,8 @@ export function createCatHeadMap(scene, opts = {}) {
             for (let col = 0; col < line.length; col++) {
                 const ch = line[col];
                 const wx = offsetX + col * cellSize;
-                const wy = offsetY + row * cellSize;
+                // Invert Y: row 0 is the top of the cat head (highest Y)
+                const wy = offsetY + (gridRows - 1 - row) * cellSize;
 
                 if (ch === '#') {
                     // ── Maze Wall (glass-like with neon tint) ──
@@ -336,7 +352,7 @@ export function createCatHeadMap(scene, opts = {}) {
                         }));
                         wall.position.set(wx, wy, y + 0.06);
                         wall.renderOrder = i + 0.1;
-                        wall.userData = { level: i, animated, baseY: wy, isWall: true };
+                        wall.userData = { level: i, isWall: true };
                         group.add(wall);
 
                         // Wall edge neon outline
@@ -353,6 +369,7 @@ export function createCatHeadMap(scene, opts = {}) {
                             new THREE.LineBasicMaterial({ color: neon.hex, transparent: true, opacity: 0.35 })
                         );
                         edgeLine.renderOrder = i + 0.15;
+                        edgeLine.userData = { level: i, isRail: true, baseOpacity: 0.35, animPhase: Math.random() * Math.PI * 2 };
                         group.add(edgeLine);
                     }
                 } else if (ch === '.' && showDots) {
@@ -366,7 +383,7 @@ export function createCatHeadMap(scene, opts = {}) {
                     dot.renderOrder = i + 0.05;
                     dot.userData = {
                         level: i, isDot: true, collected: false,
-                        baseY: wy, animated, animPhase: Math.random() * Math.PI * 2,
+                        animPhase: Math.random() * Math.PI * 2,
                     };
                     group.add(dot);
                 } else if (ch === 'o' && showDots) {
@@ -380,7 +397,7 @@ export function createCatHeadMap(scene, opts = {}) {
                     pellet.renderOrder = i + 0.06;
                     pellet.userData = {
                         level: i, isPellet: true, collected: false,
-                        baseY: wy, animated, animPhase: Math.random() * Math.PI * 2,
+                        animPhase: Math.random() * Math.PI * 2,
                     };
                     group.add(pellet);
 
@@ -394,7 +411,7 @@ export function createCatHeadMap(scene, opts = {}) {
                     );
                     ring.position.set(wx, wy, y + 0.07);
                     ring.renderOrder = i + 0.055;
-                    ring.userData = { level: i, animated, baseY: wy, animPhase: Math.random() * Math.PI * 2 };
+                    ring.userData = { level: i, isPowerRing: true, animPhase: Math.random() * Math.PI * 2 };
                     group.add(ring);
                 } else if (ch === 'P') {
                     // ── Pac-Man Spawn Marker ──
@@ -404,7 +421,7 @@ export function createCatHeadMap(scene, opts = {}) {
                     }));
                     spawnDisc.position.set(wx, wy, y + 0.06);
                     spawnDisc.renderOrder = i + 0.08;
-                    spawnDisc.userData = { level: i, isSpawn: true, spawnType: 'pacman', animated, baseY: wy };
+                    spawnDisc.userData = { level: i, isSpawn: true, spawnType: 'pacman' };
                     group.add(spawnDisc);
 
                     // Spawn glow pillar
@@ -427,7 +444,7 @@ export function createCatHeadMap(scene, opts = {}) {
                     }));
                     gDisc.position.set(wx, wy, y + 0.06);
                     gDisc.renderOrder = i + 0.08;
-                    gDisc.userData = { level: i, isSpawn: true, spawnType: 'ghost', animated, baseY: wy };
+                    gDisc.userData = { level: i, isSpawn: true, spawnType: 'ghost' };
                     group.add(gDisc);
 
                     const gPillar = new THREE.Mesh(
@@ -450,6 +467,12 @@ export function createCatHeadMap(scene, opts = {}) {
 
     scene.add(group);
 
+    // ── Ramps ──
+    let rampGroup = null;
+    if (showRamps && levels > 1) {
+        rampGroup = addRamps(group, scale, spacing, baseY, levels, rampLength);
+    }
+
     // ── Legend ──
     let legendGroup = null;
     if (showLegend) {
@@ -457,7 +480,7 @@ export function createCatHeadMap(scene, opts = {}) {
         scene.add(legendGroup);
     }
 
-    return { group, floors: floorData, legend: legendGroup, levels, spacing, baseY, animated };
+    return { group, floors: floorData, legend: legendGroup, rampGroup, levels, spacing, baseY, animated };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -535,6 +558,7 @@ function createLegend(levels, spacing, baseY, scale) {
         { label: '⭕ = Power Pellet', color: '#FFD700' },
         { label: '⬜ = Glass Wall', color: '#FFFFFF' },
         { label: '🔴 = Ghost Spawn', color: '#FF4444' },
+        { label: '🔼 = Jump Ramp', color: '#00FFAA' },
     ];
 
     keyItems.forEach((item, ki) => {
@@ -580,6 +604,170 @@ function makeTextSprite(text, color, cw, ch, fontSize) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FLOOR CONNECTING RAMPS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Create glowing ramp structures connecting between floors.
+ * Ramps angle upward from floor N to floor N+1 at the outer edges of the cat head,
+ * providing traversal paths with neon handrails and surface glow dots.
+ *
+ * @param {THREE.Group} parent - The map group to add ramps to
+ * @param {number} scale - Cat head scale
+ * @param {number} spacing - Vertical spacing between floors
+ * @param {number} baseY - Y of bottom floor
+ * @param {number} levels - Total number of floors
+ * @param {number} rampLength - Horizontal length of each ramp
+ * @returns {THREE.Group}
+ */
+function addRamps(parent, scale, spacing, baseY, levels, rampLength) {
+    const rg = new THREE.Group();
+    rg.name = 'cat-head-ramps';
+
+    // Ramp endpoints at the outer edges of the cat head (3 per level transition)
+    // Each ramp starts at floor N's edge and reaches floor N+1
+    const rampAnchorPoints = [
+        { name: 'Right Cheek',  x: 2.6 * scale, y: 1.2 * scale },
+        { name: 'Left Cheek',   x: -2.6 * scale, y: 1.2 * scale },
+        { name: 'Chin',         x: 0, y: -2.2 * scale },
+    ];
+
+    // Shared ramp geometry (angled box)
+    // Use hypotenuse so the rotated geometry spans the full vertical gap
+    const inclineAngle = Math.atan2(spacing, rampLength);
+    const actualLength = Math.sqrt(spacing * spacing + rampLength * rampLength);
+    const rampGeom = new THREE.BoxGeometry(0.5, actualLength, 0.08);
+    rampGeom.rotateX(inclineAngle);
+
+    // Shared glow dot geometry
+    const rampDotGeom = new THREE.SphereGeometry(0.06, 6, 4);
+
+    // Rail line template (perpendicular to ramp surface)
+    const halfW = 0.25; // half the ramp width
+
+    for (let i = 0; i < levels - 1; i++) {
+        const fromY = baseY + i * spacing;
+        const toY = fromY + spacing;
+        const neon = NEON_PALETTE[i % NEON_PALETTE.length];
+
+        rampAnchorPoints.forEach((anchor, ai) => {
+            // Offset slightly so ramps at same position don't overlap
+            const stagger = (ai - 1) * 0.15;
+            const ax = anchor.x + stagger;
+            const ay = anchor.y;
+
+            // ── Ramp surface ──
+            const rampPlatform = new THREE.Mesh(rampGeom, new THREE.MeshPhongMaterial({
+                color: new THREE.Color(...neon.rgb),
+                emissive: new THREE.Color(...neon.rgb),
+                emissiveIntensity: 0.18,
+                transparent: true,
+                opacity: 0.14,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+            }));
+
+            // Position: center of the ramp in 3D space
+            // Ramp extends from (ax, ay, fromY) up to (ax + cos(angle)*length projected, ay, toY)
+            // Since the ramp is inclined along Z (vertical), we position it in the XY plane
+            // The ramp extends outward from the cat edge in the radial direction
+            const rampMidY = (fromY + toY) / 2;
+            const dirOutX = ax > 0 ? 1 : (ax < 0 ? -1 : 0);
+            const dirOutY = ay > 0 ? 1 : (ay < 0 ? -1 : 0);
+            const outX = dirOutX !== 0 ? dirOutX * rampLength * 0.35 : 0;
+            const outY = dirOutY !== 0 ? dirOutY * rampLength * 0.35 : (ay < 0 ? -rampLength * 0.5 : 0);
+
+            rampPlatform.position.set(ax + outX, ay + outY, rampMidY);
+            rampPlatform.renderOrder = i + 0.25;
+            rampPlatform.userData = { level: i, isRamp: true };
+            rg.add(rampPlatform);
+
+            // ── Neon handrail lines (left + right edge) ──
+            const railZOffset = 0.06;
+            const railPts = 8;
+            const railGeomL = new THREE.BufferGeometry();
+            const railGeomR = new THREE.BufferGeometry();
+            const leftPts = [];
+            const rightPts = [];
+
+            for (let r = 0; r <= railPts; r++) {
+                const t = r / railPts;
+                const rz = fromY + t * spacing;
+                const rx = ax + outX + t * (dirOutX !== 0 ? dirOutX * rampLength * 0.7 : 0);
+                const ry = ay + outY + t * (dirOutY !== 0 ? dirOutY * rampLength * 0.7 : 0);
+                leftPts.push(new THREE.Vector3(rx - halfW, ry, rz + railZOffset));
+                rightPts.push(new THREE.Vector3(rx + halfW, ry, rz + railZOffset));
+            }
+
+            railGeomL.setFromPoints(leftPts);
+            railGeomR.setFromPoints(rightPts);
+
+            const railMat = new THREE.LineBasicMaterial({
+                color: neon.hex, transparent: true, opacity: 0.7,
+            });
+            const railL = new THREE.Line(railGeomL, railMat);
+            const railR = new THREE.Line(railGeomR, railMat);
+            railL.renderOrder = i + 0.28;
+            railL.userData = { level: i, isRail: true, baseOpacity: 0.70, animPhase: Math.random() * Math.PI * 2 };
+            railR.renderOrder = i + 0.28;
+            railR.userData = { level: i, isRail: true, baseOpacity: 0.70, animPhase: Math.random() * Math.PI * 2 };
+            rg.add(railL);
+            rg.add(railR);
+
+            // ── Glow dots along ramp surface ──
+            const numDots = 5;
+            for (let d = 0; d < numDots; d++) {
+                const dt = (d + 0.5) / numDots;
+                const dz = fromY + dt * spacing;
+                const dx = ax + outX + dt * (dirOutX !== 0 ? dirOutX * rampLength * 0.7 : 0);
+                const dy = ay + outY + dt * (dirOutY !== 0 ? dirOutY * rampLength * 0.7 : 0);
+
+                const dot = new THREE.Mesh(rampDotGeom, new THREE.MeshPhongMaterial({
+                    color: neon.hex,
+                    emissive: neon.hex,
+                    emissiveIntensity: 0.5,
+                }));
+                dot.position.set(dx, dy, dz + 0.04);
+                dot.renderOrder = i + 0.27;
+                dot.userData = { level: i, isRampDot: true, animPhase: Math.random() * Math.PI * 2 };
+                rg.add(dot);
+            }
+
+            // ── Entry/exit landing pads ──
+            const padGeom = new THREE.CylinderGeometry(0.25, 0.25, 0.04, 16);
+            [0, 1].forEach(et => {
+                const ez = fromY + et * spacing;
+                const ex = ax + outX + et * (dirOutX !== 0 ? dirOutX * rampLength * 0.7 : 0);
+                const ey = ay + outY + et * (dirOutY !== 0 ? dirOutY * rampLength * 0.7 : 0);
+                const pad = new THREE.Mesh(padGeom, new THREE.MeshPhongMaterial({
+                    color: neon.hex, emissive: neon.hex, emissiveIntensity: 0.6,
+                    transparent: true, opacity: 0.5, depthWrite: false,
+                }));
+                pad.position.set(ex, ey, ez);
+                pad.renderOrder = i + 0.29;
+                rg.add(pad);
+
+                // Arrow indicator ring on landing pad
+                const arrowRing = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.22, 0.03, 8, 12),
+                    new THREE.MeshPhongMaterial({
+                        color: 0x00FFAA, emissive: 0x00FFAA, emissiveIntensity: 0.6,
+                        transparent: true, opacity: 0.7, depthWrite: false,
+                    })
+                );
+                arrowRing.position.set(ex, ey, ez + 0.03);
+                arrowRing.renderOrder = i + 0.295;
+                arrowRing.userData = { level: i, isSpawn: true };
+                rg.add(arrowRing);
+            });
+        });
+    }
+
+    parent.add(rg);
+    return rg;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ANIMATION UPDATE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -594,13 +782,13 @@ export function updateCatHeadMap(map, deltaTime, elapsed = 0) {
     if (!map || !map.animated) return;
 
     const { group } = map;
-    group.children.forEach(child => {
-        if (!child.userData || !child.userData.animated) return;
+    group.traverse(child => {
+        if (!child.userData) return;
         const { level, animPhase, baseY } = child.userData;
-        const t = elapsed + animPhase;
+        const t = elapsed + (animPhase || 0);
 
-        // Float floor meshes and dot-like elements
-        if (child.isMesh && baseY !== undefined) {
+        // Float floor meshes and pillar-like elements (only objects with animated flag + baseY)
+        if (child.userData.animated && child.isMesh && baseY !== undefined) {
             const floatOff = Math.sin(t * 0.6 + level * 0.7) * 0.06;
             child.position.y = baseY + floatOff;
 
@@ -612,6 +800,13 @@ export function updateCatHeadMap(map, deltaTime, elapsed = 0) {
                             ? 0.4 + 0.2 * Math.sin(t * 1.5 + level)
                             : 0.10 + 0.06 * Math.sin(t * 1.2 + level);
                 }
+            }
+
+            // Slow hue-shift on glass floors (cycles between related neon hues)
+            if (child.userData.baseHue !== undefined && child.material.color && child.material.emissive) {
+                const hueShift = child.userData.baseHue + 0.04 * Math.sin(t * 0.25 + level * 0.6);
+                child.material.color.setHSL(hueShift, child.userData.baseSat, child.userData.baseLight);
+                child.material.emissive.setHSL(hueShift, child.userData.baseSat * 0.8, child.userData.baseLight * 0.5);
             }
         }
 
@@ -627,7 +822,27 @@ export function updateCatHeadMap(map, deltaTime, elapsed = 0) {
             child.scale.setScalar(s);
         }
 
-        // Rotating spawn markers
+        // Rotating power pellet glow rings
+        if (child.userData.isPowerRing) {
+            child.rotation.z += deltaTime * 0.8;
+            child.rotation.x += deltaTime * 0.3;
+        }
+
+        // Scale-pulsing ramp glow dots with breathing emissive intensity
+        if (child.userData.isRampDot) {
+            const s = 0.7 + 0.3 * Math.sin(t * 2.5 + child.userData.animPhase);
+            child.scale.setScalar(s);
+            if (child.material && child.material.emissiveIntensity !== undefined) {
+                child.material.emissiveIntensity = 0.5 + 0.35 * Math.sin(t * 2.5 + child.userData.animPhase);
+            }
+        }
+
+        // Opacity-pulsing neon rail lines (floor edges, ramp handrails, wall outlines)
+        if (child.userData.isRail && child.material && child.material.opacity !== undefined) {
+            child.material.opacity = child.userData.baseOpacity * (0.7 + 0.3 * Math.sin(t * 0.8 + child.userData.animPhase));
+        }
+
+        // Rotating spawn markers & ramp arrow rings
         if (child.userData.isSpawn) {
             child.rotation.z += deltaTime * 1.5;
         }
@@ -671,6 +886,7 @@ export function removeCatHeadMap(scene, map) {
 
     map.group = null;
     map.legend = null;
+    map.rampGroup = null;
     map.floors = [];
 }
 

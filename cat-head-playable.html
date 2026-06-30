@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cat-Head Pac-Man — Playable 3D</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+
+        #hud {
+            position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 20; pointer-events: none; text-align: center;
+        }
+        #score {
+            color: #FFD700; font-size: 22px; font-weight: bold;
+            letter-spacing: 2px; text-shadow: 0 0 10px rgba(255,215,0,0.5);
+        }
+        #lives {
+            color: #FFFF00; font-size: 18px; margin-top: 4px;
+            text-shadow: 0 0 8px rgba(255,255,0,0.4);
+        }
+        #jump-indicator {
+            color: #88ccff; font-size: 11px; margin-top: 2px;
+            text-shadow: 0 0 6px rgba(136,204,255,0.4);
+            transition: color 0.3s;
+        }
+        #power-bar {
+            width: 200px; height: 6px; margin: 6px auto 0;
+            background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;
+        }
+        #power-fill {
+            width: 0%; height: 100%; background: #00FFFF;
+            border-radius: 3px; transition: width 0.1s linear;
+        }
+
+        #overlay {
+            position: fixed; inset: 0; z-index: 100; display: none;
+            align-items: center; justify-content: center; flex-direction: column;
+            background: rgba(0,0,0,0.85);
+        }
+        #overlay.active { display: flex; }
+        #overlay h1 {
+            color: #FFD700; font-size: 36px; letter-spacing: 3px;
+            text-shadow: 0 0 20px rgba(255,215,0,0.6); margin-bottom: 16px;
+        }
+        #overlay p {
+            color: #e0e0e0; font-size: 16px; margin-bottom: 8px;
+        }
+        #overlay button {
+            margin-top: 20px; padding: 12px 40px;
+            border: 2px solid #FFD700; border-radius: 8px;
+            background: rgba(255,215,0,0.1); color: #FFD700;
+            font-family: inherit; font-size: 18px; cursor: pointer;
+            letter-spacing: 2px; transition: all 0.2s;
+        }
+        #overlay button:hover {
+            background: rgba(255,215,0,0.25);
+            box-shadow: 0 0 20px rgba(255,215,0,0.3);
+        }
+
+        #hint {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            color: #6a7a8a; font-size: 11px; z-index: 20;
+            letter-spacing: 1px; pointer-events: none;
+            animation: fadeHint 5s ease-in-out forwards;
+        }
+        @keyframes fadeHint {
+            0%, 50% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+
+        /* ── Mobile virtual controls ── */
+        #mobile-controls {
+            display: none;
+            position: fixed; bottom: 0; left: 0; right: 0; height: 50%;
+            z-index: 30; pointer-events: none;
+        }
+
+        .joystick-zone {
+            position: absolute; bottom: 40px; left: 30px;
+            width: 130px; height: 130px; pointer-events: auto;
+            touch-action: none;
+        }
+        .joystick-base {
+            width: 130px; height: 130px; border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 70%);
+            border: 2px solid rgba(255,255,255,0.12);
+            position: relative;
+            box-shadow: 0 0 20px rgba(100,180,255,0.08);
+        }
+        .joystick-knob {
+            width: 52px; height: 52px; border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.35), rgba(255,215,0,0.2));
+            border: 2px solid rgba(255,215,0,0.4);
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            transition: none;
+            box-shadow: 0 0 15px rgba(255,215,0,0.15);
+        }
+
+        .jump-btn {
+            position: absolute; bottom: 50px; right: 40px;
+            width: 80px; height: 80px; border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, rgba(136,204,255,0.3), rgba(68,136,204,0.15));
+            border: 2px solid rgba(136,204,255,0.45);
+            pointer-events: auto;
+            display: flex; align-items: center; justify-content: center;
+            color: #88ccff; font-size: 15px; font-weight: bold;
+            letter-spacing: 1px; user-select: none;
+            box-shadow: 0 0 18px rgba(136,204,255,0.10);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .jump-btn:active {
+            background: radial-gradient(circle at 40% 35%, rgba(136,204,255,0.5), rgba(68,136,204,0.3));
+            box-shadow: 0 0 28px rgba(136,204,255,0.25);
+        }
+
+        @media (hover: none) and (pointer: coarse) {
+            #hint { display: none; }
+            #mobile-controls { display: block; }
+        }
+    </style>
+</head>
+<body>
+    <div id="hud">
+        <div id="score">SCORE: 0</div>
+        <div id="lives">❤️ ❤️ ❤️</div>
+        <div id="jump-indicator">SPACE = Jump (near ramps)</div>
+        <div id="power-bar"><div id="power-fill"></div></div>
+    </div>
+    <div id="hint">⬆⬇⬅➡ or WASD to move · SPACE to jump floors</div>
+    <div id="mobile-controls">
+        <div class="joystick-zone" id="joystick-zone">
+            <div class="joystick-base">
+                <div class="joystick-knob" id="joystick-knob"></div>
+            </div>
+        </div>
+        <div class="jump-btn" id="jump-btn">⬆<br>JUMP</div>
+    </div>
+    <div id="overlay">
+        <h1 id="overlay-title"></h1>
+        <p id="overlay-sub"></p>
+        <button id="overlay-btn">PLAY AGAIN</button>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.154.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.154.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import {
+            createCatHeadMap, updateCatHeadMap, removeCatHeadMap,
+            CAT_HEAD_LEVEL, getNeonColor
+        } from './floors.js';
+
+        // ═══════════════════════════════════════════════════════════════
+        // GAME CONSTANTS
+        // ═══════════════════════════════════════════════════════════════
+        const SCALE = 3.0;
+        const BASE_Y = -3;
+        const FLOOR_SPACING = 3.0;
+        const TOTAL_FLOORS = 4;
+        const MOVE_SPEED = 0.14;      // seconds per cell
+        const GHOST_MOVE_SPEED = 0.22; // seconds per ghost cell
+        const POWER_DURATION = 8.0;    // seconds
+        const SCORE_DOT = 10;
+        const SCORE_PELLET = 50;
+        const SCORE_GHOST = 200;
+        const START_LIVES = 3;
+        const GHOST_COLORS = [0xFF4444, 0x44DDFF, 0xFF88CC, 0xFFB847];
+        const GHOST_FRIGHTENED = 0x2244AA;
+        const GHOST_FLASH_WHITE = 0xDDDDEE;
+        const POWER_WARNING_START = 3.0;  // seconds before expiry to start flashing
+        const GHOST_FOLLOW_DELAY = 1.8;   // seconds before ghosts chase Pac-Man to the next floor
+        const GHOST_RISE_DURATION = 0.45;  // seconds for ghost scale-in animation
+
+        // ═══════════════════════════════════════════════════════════════
+        // GRID PARSING
+        // ═══════════════════════════════════════════════════════════════
+        const grid = CAT_HEAD_LEVEL.map(r => r.split(''));
+        const gridRows = grid.length;
+        const gridCols = Math.max(...grid.map(r => r.length));
+        const cellSize = (SCALE * 5.0) / gridCols;
+        const offsetX = -(gridCols / 2) * cellSize + cellSize / 2;
+        const offsetY = -(gridRows / 2) * cellSize + cellSize / 2;
+
+        function gridToWorld(row, col) {
+            return {
+                x: offsetX + col * cellSize,
+                y: offsetY + (gridRows - 1 - row) * cellSize
+            };
+        }
+
+        function worldToGrid(wx, wy) {
+            const col = Math.round((wx - offsetX) / cellSize);
+            const row = gridRows - 1 - Math.round((wy - offsetY) / cellSize);
+            if (row < 0 || row >= gridRows || col < 0 || col >= (grid[row] ? grid[row].length : 0)) {
+                return null;
+            }
+            return { row, col };
+        }
+
+        function isWall(row, col) {
+            if (row < 0 || row >= gridRows) return true;
+            if (col < 0 || col >= grid[row].length) return true;
+            return grid[row][col] === '#';
+        }
+
+        // Find spawns & collectibles
+        let pacmanSpawn = { row: 13, col: 19 };
+        const ghostSpawns = [];
+        const dotSet = new Set(); // "row,col" keys
+
+        for (let row = 0; row < gridRows; row++) {
+            for (let col = 0; col < grid[row].length; col++) {
+                const ch = grid[row][col];
+                if (ch === 'P') pacmanSpawn = { row, col };
+                if (ch === 'G') ghostSpawns.push({ row, col });
+                if (ch === '.' || ch === 'o') dotSet.add(`${row},${col}`);
+            }
+        }
+        const totalDots = dotSet.size;
+
+        // ═══════════════════════════════════════════════════════════════
+        // AUDIO (simple oscillator beeps for eating)
+        // ═══════════════════════════════════════════════════════════════
+        let audioCtx = null;
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        function playBeep(freq, dur, type = 'square') {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + dur);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // THREE.JS SCENE SETUP
+        // ═══════════════════════════════════════════════════════════════
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050510);
+
+        // Starfield
+        const starsGeom = new THREE.BufferGeometry();
+        const starCount = 600;
+        const starPositions = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+            starPositions[i * 3] = (Math.random() - 0.5) * 60;
+            starPositions[i * 3 + 1] = (Math.random() - 0.5) * 60;
+            starPositions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+        }
+        starsGeom.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const stars = new THREE.Points(starsGeom,
+            new THREE.PointsMaterial({ color: 0x8899cc, size: 0.04, transparent: true, opacity: 0.4 }));
+        scene.add(stars);
+
+        // Lighting
+        scene.add(new THREE.AmbientLight(0x445566, 0.7));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        dirLight.position.set(10, 15, 8);
+        scene.add(dirLight);
+        const dirLight2 = new THREE.DirectionalLight(0x88aacc, 0.3);
+        dirLight2.position.set(-8, -2, 12);
+        scene.add(dirLight2);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 80);
+
+        // ── Cat-Head 3D Map ──
+        const map = createCatHeadMap(scene, {
+            levels: TOTAL_FLOORS,
+            spacing: FLOOR_SPACING,
+            baseY: BASE_Y,
+            scale: SCALE,
+            glassOpacity: 0.12,
+            showMaze: true,
+            showDots: true,
+            showRamps: true,
+            showLegend: false,
+            animated: true,
+        });
+        const mapGroup = map.group;
+
+        // ── Ghost arrival warning rings (pulse at ramp positions) ──
+        const rampWorldPoints = [
+            { x: 2.6 * SCALE, y: 1.2 * SCALE },
+            { x: -2.6 * SCALE, y: 1.2 * SCALE },
+            { x: 0, y: -2.2 * SCALE },
+        ];
+        const ghostWarningRings = [];
+        rampWorldPoints.forEach(pt => {
+            const ringGeom = new THREE.TorusGeometry(cellSize * 1.1, cellSize * 0.06, 8, 24);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0xFF3333, transparent: true, opacity: 0,
+                side: THREE.DoubleSide,
+            });
+            const ring = new THREE.Mesh(ringGeom, ringMat);
+            ring.position.set(pt.x, pt.y, BASE_Y + 0.15);
+            ring.rotation.x = Math.PI / 2;
+            ring.visible = false;
+            ring.userData = { baseScale: 1.0 };
+            scene.add(ring);
+            ghostWarningRings.push(ring);
+        });
+
+        // ═══════════════════════════════════════════════════════════════
+        // PAC-MAN MODEL (classic yellow wedge)
+        // ═══════════════════════════════════════════════════════════════
+        const pacmanRadius = cellSize * 0.38;
+        const pacmanGroup = new THREE.Group();
+        pacmanGroup.name = 'pacman-player';
+
+        const bodyGeom = new THREE.SphereGeometry(pacmanRadius, 20, 16,
+            0.25 * Math.PI, Math.PI * 1.5);
+        const bodyMat = new THREE.MeshPhongMaterial({
+            color: 0xFFFF00, emissive: 0xFFFF00, emissiveIntensity: 0.35,
+            side: THREE.DoubleSide,
+        });
+        const body = new THREE.Mesh(bodyGeom, bodyMat);
+        body.rotation.z = Math.PI / 2;
+        pacmanGroup.add(body);
+
+        // Eye
+        const eyeGeom = new THREE.SphereGeometry(pacmanRadius * 0.22, 8, 6);
+        const eyeMat = new THREE.MeshPhongMaterial({ color: 0x000000 });
+        const eye = new THREE.Mesh(eyeGeom, eyeMat);
+        eye.position.set(0, pacmanRadius * 0.3, pacmanRadius * 0.45);
+        pacmanGroup.add(eye);
+
+        scene.add(pacmanGroup);
+        let pacmanFloor = 0;
+
+        // ═══════════════════════════════════════════════════════════════
+        // GHOST MODELS
+        // ═══════════════════════════════════════════════════════════════
+        const ghostRadius = cellSize * 0.33;
+        const ghosts = [];
+        const ghostMeshes = [];
+
+        function createGhostMesh(colorHex) {
+            const g = new THREE.Group();
+            // Body
+            const bodyG = new THREE.SphereGeometry(ghostRadius, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.7);
+            const bodyM = new THREE.MeshPhongMaterial({
+                color: colorHex, emissive: colorHex, emissiveIntensity: 0.3
+            });
+            g.add(new THREE.Mesh(bodyG, bodyM));
+            // Skirt
+            const skirtG = new THREE.CylinderGeometry(ghostRadius * 0.95, ghostRadius * 0.8, ghostRadius * 0.5, 12);
+            const skirtM = new THREE.MeshPhongMaterial({
+                color: colorHex, emissive: colorHex, emissiveIntensity: 0.2
+            });
+            const skirt = new THREE.Mesh(skirtG, skirtM);
+            skirt.position.z = -ghostRadius * 0.5;
+            g.add(skirt);
+            // Eyes
+            const eGeom = new THREE.SphereGeometry(ghostRadius * 0.2, 6, 4);
+            const eMat = new THREE.MeshPhongMaterial({ color: 0xFFFFFF, emissive: 0xFFFFFF, emissiveIntensity: 0.5 });
+            [-ghostRadius * 0.25, ghostRadius * 0.25].forEach(ex => {
+                const e = new THREE.Mesh(eGeom, eMat);
+                e.position.set(ex, ghostRadius * 0.15, ghostRadius * 0.25);
+                g.add(e);
+            });
+            // Pupils
+            const pGeom = new THREE.SphereGeometry(ghostRadius * 0.1, 4, 3);
+            const pMat = new THREE.MeshPhongMaterial({ color: 0x0000FF });
+            [-ghostRadius * 0.25, ghostRadius * 0.25].forEach(ex => {
+                const p = new THREE.Mesh(pGeom, pMat);
+                p.position.set(ex, ghostRadius * 0.12, ghostRadius * 0.38);
+                g.add(p);
+            });
+            g.userData = { baseColor: colorHex };
+            return g;
+        }
+
+        for (let i = 0; i < 4; i++) {
+            const mesh = createGhostMesh(GHOST_COLORS[i]);
+            mesh.visible = true;
+            ghostMeshes.push(mesh);
+            scene.add(mesh);
+
+            const spawn = ghostSpawns[i] || ghostSpawns[0] || { row: 12, col: 19 };
+            ghosts.push({
+                mesh,
+                row: spawn.row,
+                col: spawn.col,
+                dir: { dr: 0, dc: -1 },
+                floor: 0,
+                alive: true,
+                respawnTimer: 0,
+                riseProgress: 1,  // 0→1 scale-in animation (1 = fully visible)
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GAME STATE
+        // ═══════════════════════════════════════════════════════════════
+        let score = 0;
+        let lives = START_LIVES;
+        let pacmanRow = pacmanSpawn.row;
+        let pacmanCol = pacmanSpawn.col;
+        let pacmanDir = { dr: 0, dc: 0 };
+        let nextDir = { dr: 0, dc: 0 };
+        let moveTimer = 0;
+        let ghostMoveTimer = 0;
+        let isPoweredUp = false;
+        let powerTimer = 0;
+        let ghostBlinkTimer = 0;
+        let ghostsFlashWhite = false;
+        let gameOver = false;
+        let gameWon = false;
+        let consecutiveGhostEats = 0;
+        let dotsRemaining = dotSet.size;
+        let jumpCooldown = 0;
+        let isJumping = false;
+        let jumpProgress = 0;
+        const JUMP_DURATION = 0.6;
+        const JUMP_COOLDOWN_TIME = 0.8;
+        let ghostFollowTimer = 0;      // countdown until ghosts move to current floor
+        let virtualDir = null;       // {dr, dc} from joystick
+        let joystickActive = false;
+        let joystickTouchId = null;
+        let joystickStart = { x: 0, y: 0 };
+        const JOYSTICK_DEAD_ZONE = 0.2;
+
+        const collectedDots = new Set();
+
+        function resetGame() {
+            score = 0;
+            lives = START_LIVES;
+            pacmanRow = pacmanSpawn.row;
+            pacmanCol = pacmanSpawn.col;
+            pacmanDir = { dr: 0, dc: 0 };
+            nextDir = { dr: 0, dc: 0 };
+            moveTimer = 0;
+            ghostMoveTimer = 0;
+            isPoweredUp = false;
+            powerTimer = 0;
+            ghostBlinkTimer = 0;
+            ghostsFlashWhite = false;
+            gameOver = false;
+            gameWon = false;
+            consecutiveGhostEats = 0;
+            pacmanFloor = 0;
+            jumpCooldown = 0;
+            isJumping = false;
+            jumpProgress = 0;
+            ghostFollowTimer = 0;
+            hideGhostWarningRings();
+            collectedDots.clear();
+
+            // Repopulate dotSet so dots can be collected again
+            dotSet.clear();
+            for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < grid[row].length; col++) {
+                    const ch = grid[row][col];
+                    if (ch === '.' || ch === 'o') dotSet.add(`${row},${col}`);
+                }
+            }
+
+            // Reset dots visibility
+            mapGroup.traverse(child => {
+                if (child.userData && (child.userData.isDot || child.userData.isPellet)) {
+                    child.userData.collected = false;
+                    child.visible = true;
+                }
+            });
+
+            // Reset ghosts
+            ghosts.forEach((g, i) => {
+                const spawn = ghostSpawns[i] || ghostSpawns[0];
+                g.row = spawn.row;
+                g.col = spawn.col;
+                g.dir = { dr: 0, dc: -1 };
+                g.floor = 0;
+                g.alive = true;
+                g.respawnTimer = 0;
+                g.riseProgress = 1;
+                g.mesh.visible = true;
+                g.mesh.scale.setScalar(1);
+                setGhostColor(g, GHOST_COLORS[i]);
+            });
+
+            dotsRemaining = dotSet.size;
+            updateHUD();
+            document.getElementById('overlay').classList.remove('active');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GHOST COLOR HELPERS
+        // ═══════════════════════════════════════════════════════════════
+        function setGhostColor(ghost, hex) {
+            ghost.mesh.traverse(child => {
+                if (child.material && child.material.emissive && child.material.color) {
+                    if (child.material.color.getHex() !== 0xFFFFFF &&
+                        child.material.color.getHex() !== 0x0000FF &&
+                        child.material.color.getHex() !== 0x000000) {
+                        child.material.color.setHex(hex);
+                        child.material.emissive.setHex(hex);
+                    }
+                }
+            });
+            ghost.mesh.userData.baseColor = hex;
+        }
+
+        function setGhostsFrightened() {
+            ghosts.forEach(g => {
+                if (g.alive) setGhostColor(g, GHOST_FRIGHTENED);
+            });
+        }
+
+        function restoreGhostColors() {
+            ghosts.forEach((g, i) => {
+                if (g.alive) setGhostColor(g, GHOST_COLORS[i]);
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // INPUT (keyboard + virtual joystick)
+        // ═══════════════════════════════════════════════════════════════
+        const keys = {};
+        window.addEventListener('keydown', e => {
+            keys[e.key] = true;
+            initAudio();
+
+            if ((e.key === ' ' || e.key === 'Spacebar') && !gameOver && !gameWon) {
+                e.preventDefault();
+                tryJump();
+            }
+        });
+        window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+        // ── Virtual joystick (touch) ──
+        const joystickZone = document.getElementById('joystick-zone');
+        const joystickKnob = document.getElementById('joystick-knob');
+
+        function getJoystickDirection(offsetX, offsetY) {
+            const r = 65; // joystick base radius in px
+            const dist = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+            if (dist < r * JOYSTICK_DEAD_ZONE) return null;
+
+            const clampedDist = Math.min(dist, r);
+            const nx = offsetX / dist;
+            const ny = offsetY / dist;
+
+            // Move knob
+            joystickKnob.style.transform =
+                `translate(calc(-50% + ${nx * clampedDist}px), calc(-50% + ${ny * clampedDist}px))`;
+
+            // Map to 4 directions (prefer dominant axis)
+            if (Math.abs(offsetX) > Math.abs(offsetY)) {
+                return offsetX > 0 ? { dr: 0, dc: 1 } : { dr: 0, dc: -1 };
+            } else {
+                return offsetY > 0 ? { dr: 1, dc: 0 } : { dr: -1, dc: 0 };
+            }
+        }
+
+        joystickZone.addEventListener('touchstart', e => {
+            e.preventDefault();
+            initAudio();
+            joystickActive = true;
+            const touch = e.changedTouches[0];
+            joystickTouchId = touch.identifier;
+            const rect = joystickZone.getBoundingClientRect();
+            joystickStart = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+            };
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!joystickActive) return;
+            const touch = Array.from(e.changedTouches).find(
+                t => t.identifier === joystickTouchId);
+            if (!touch) return;
+            const ox = touch.clientX - joystickStart.x;
+            const oy = touch.clientY - joystickStart.y;
+            virtualDir = getJoystickDirection(ox, oy);
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchend', e => {
+            e.preventDefault();
+            joystickActive = false;
+            virtualDir = null;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+        });
+
+        joystickZone.addEventListener('touchcancel', () => {
+            joystickActive = false;
+            virtualDir = null;
+            joystickKnob.style.transform = 'translate(-50%, -50%)';
+        });
+
+        // ── Jump button (touch) ──
+        const jumpBtn = document.getElementById('jump-btn');
+        jumpBtn.addEventListener('touchstart', e => {
+            e.preventDefault();
+            initAudio();
+            if (!gameOver && !gameWon) tryJump();
+        });
+
+        function getInputDirection() {
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) return { dr: -1, dc: 0 };
+            if (keys['ArrowDown'] || keys['s'] || keys['S']) return { dr: 1, dc: 0 };
+            if (keys['ArrowLeft'] || keys['a'] || keys['A']) return { dr: 0, dc: -1 };
+            if (keys['ArrowRight'] || keys['d'] || keys['D']) return { dr: 0, dc: 1 };
+            if (virtualDir) return virtualDir;
+            return null;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // JUMP / FLOOR SWITCHING
+        // ═══════════════════════════════════════════════════════════════
+        function tryJump() {
+            if (jumpCooldown > 0 || isJumping) return;
+            const targetFloor = pacmanFloor + 1;
+            if (targetFloor >= TOTAL_FLOORS) return;
+
+            // Check if near a ramp
+            const w = gridToWorld(pacmanRow, pacmanCol);
+            const nearRamp = checkNearRamp(w.x, w.y, pacmanFloor);
+            if (!nearRamp) return;
+
+            isJumping = true;
+            jumpProgress = 0;
+            jumpCooldown = JUMP_COOLDOWN_TIME;
+            playBeep(600, 0.1, 'triangle');
+        }
+
+        function checkNearRamp(wx, wy, floor) {
+            // Ramp anchor points (same as floors.js addRamps)
+            const rampPoints = [
+                { x: 2.6 * SCALE, y: 1.2 * SCALE },
+                { x: -2.6 * SCALE, y: 1.2 * SCALE },
+                { x: 0, y: -2.2 * SCALE },
+            ];
+            const threshold = 1.5;
+            for (const pt of rampPoints) {
+                const dx = wx - pt.x;
+                const dy = wy - pt.y;
+                if (Math.sqrt(dx * dx + dy * dy) < threshold) return true;
+            }
+            return false;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // DOT COLLECTION
+        // ═══════════════════════════════════════════════════════════════
+        function collectDot(row, col) {
+            const key = `${row},${col}`;
+            if (!dotSet.has(key)) return;
+
+            const cell = grid[row][col];
+            dotSet.delete(key);
+            collectedDots.add(key);
+            dotsRemaining--;
+
+            if (cell === 'o') {
+                score += SCORE_PELLET;
+                activatePowerUp();
+                playBeep(800, 0.15, 'sawtooth');
+            } else {
+                score += SCORE_DOT;
+                playBeep(440, 0.06);
+            }
+
+            // Hide 3D dot meshes on ALL floors at this grid position
+            const w = gridToWorld(row, col);
+            mapGroup.traverse(child => {
+                if (child.userData && (child.userData.isDot || child.userData.isPellet)
+                    && !child.userData.collected) {
+                    const dx = child.position.x - w.x;
+                    const dy = child.position.y - w.y;
+                    if (Math.abs(dx) < cellSize * 0.4 && Math.abs(dy) < cellSize * 0.4) {
+                        child.userData.collected = true;
+                        child.visible = false;
+                    }
+                }
+            });
+
+            updateHUD();
+
+            if (dotsRemaining === 0) {
+                winGame();
+            }
+        }
+
+        function activatePowerUp() {
+            isPoweredUp = true;
+            powerTimer = POWER_DURATION;
+            consecutiveGhostEats = 0;
+            ghostBlinkTimer = 0;
+            ghostsFlashWhite = false;
+            setGhostsFrightened();
+            updateHUD();
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GHOST WARNING RING HELPERS
+        // ═══════════════════════════════════════════════════════════════
+        function showGhostWarningRings(floor) {
+            const z = BASE_Y + floor * FLOOR_SPACING + 0.15;
+            ghostWarningRings.forEach(ring => {
+                ring.position.z = z;
+                ring.visible = true;
+                ring.material.opacity = 0.15;
+                ring.userData.baseScale = 0.6;
+            });
+        }
+
+        function updateGhostWarningRings() {
+            const urgency = 1 - (ghostFollowTimer / GHOST_FOLLOW_DELAY); // 0→1 as timer runs out
+            const pulseFreq = 4 + urgency * 6;        // 4→10 Hz — faster as urgency rises
+            const baseOpacity = 0.12 + urgency * 0.55; // 0.12→0.67 — brighter as urgency rises
+            const baseScale = 0.6 + urgency * 1.2;     // 0.6→1.8 — bigger as urgency rises
+            const flash = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * pulseFreq);
+
+            ghostWarningRings.forEach(ring => {
+                ring.material.opacity = baseOpacity * (0.6 + 0.4 * flash);
+                const s = baseScale * (0.9 + 0.1 * flash);
+                ring.scale.setScalar(s);
+            });
+        }
+
+        function hideGhostWarningRings() {
+            ghostWarningRings.forEach(ring => {
+                ring.visible = false;
+                ring.material.opacity = 0;
+                ring.scale.setScalar(1);
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GHOST FLOOR FOLLOWING (ghosts chase Pac-Man across floors)
+        // ═══════════════════════════════════════════════════════════════
+        function findNearestWalkable(worldX, worldY) {
+            const g = worldToGrid(worldX, worldY);
+            if (g && !isWall(g.row, g.col)) return g;
+            // Search outward in expanding radius
+            for (let r = 1; r < 8; r++) {
+                for (let dr = -r; dr <= r; dr++) {
+                    for (let dc = -r; dc <= r; dc++) {
+                        if (Math.abs(dr) !== r && Math.abs(dc) !== r) continue;
+                        const nr = (g ? g.row : 13) + dr;
+                        const nc = (g ? g.col : 19) + dc;
+                        if (!isWall(nr, nc)) return { row: nr, col: nc };
+                    }
+                }
+            }
+            return { row: 13, col: 19 }; // fallback to center
+        }
+
+        function moveGhostsToCurrentFloor(targetFloor) {
+            const rampCells = rampWorldPoints.map(
+                p => findNearestWalkable(p.x, p.y));
+
+            let rampIdx = 0;
+            let moved = 0;
+            ghosts.forEach(g => {
+                if (!g.alive) return;
+                if (g.floor >= targetFloor) return;  // already here or above
+                g.floor = targetFloor;
+                g.riseProgress = 0;  // trigger rise animation
+                const cell = rampCells[rampIdx % rampCells.length];
+                g.row = cell.row;
+                g.col = cell.col;
+                g.dir = { dr: 0, dc: -1 };
+                rampIdx++;
+                moved++;
+            });
+            if (moved > 0) playBeep(300, 0.15, 'triangle');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GHOST AI
+        // ═══════════════════════════════════════════════════════════════
+        function getAvailableDirections(row, col, floor) {
+            const dirs = [
+                { dr: -1, dc: 0 }, { dr: 1, dc: 0 },
+                { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+            ];
+            return dirs.filter(d => {
+                const nr = row + d.dr;
+                const nc = col + d.dc;
+                return !isWall(nr, nc);
+            });
+        }
+
+        function ghostTarget(ghost, idx) {
+            if (isPoweredUp) {
+                // Flee: move away from Pac-Man
+                const dx = ghost.col - pacmanCol;
+                const dy = ghost.row - pacmanRow;
+                return { row: ghost.row + Math.sign(dy) * 5, col: ghost.col + Math.sign(dx) * 5 };
+            }
+            // Chase Pac-Man
+            return { row: pacmanRow, col: pacmanCol };
+        }
+
+        function moveGhost(ghost, idx) {
+            if (!ghost.alive) {
+                ghost.respawnTimer -= GHOST_MOVE_SPEED;
+                if (ghost.respawnTimer <= 0) {
+                    ghost.alive = true;
+                    ghost.mesh.visible = true;
+                    ghost.dir = { dr: 0, dc: -1 };
+                    ghost.riseProgress = 0;  // trigger rise animation
+                    if (pacmanFloor > 0) {
+                        // Respawn on Pac-Man's floor at a random ramp entry
+                        ghost.floor = pacmanFloor;
+                        const pt = rampWorldPoints[Math.floor(Math.random() * rampWorldPoints.length)];
+                        const cell = findNearestWalkable(pt.x, pt.y);
+                        ghost.row = cell.row;
+                        ghost.col = cell.col;
+                    } else {
+                        // Floor 0: use ghost house spawn
+                        const spawn = ghostSpawns[idx] || ghostSpawns[0];
+                        ghost.row = spawn.row;
+                        ghost.col = spawn.col;
+                        ghost.floor = 0;
+                    }
+                    setGhostColor(ghost, isPoweredUp ? (ghostsFlashWhite ? GHOST_FLASH_WHITE : GHOST_FRIGHTENED) : GHOST_COLORS[idx]);
+                }
+                return;
+            }
+
+            const available = getAvailableDirections(ghost.row, ghost.col, ghost.floor);
+            if (available.length === 0) return;
+
+            // Remove reverse direction (prevents oscillation)
+            const reverse = { dr: -ghost.dir.dr, dc: -ghost.dir.dc };
+            const filtered = available.filter(d =>
+                !(d.dr === reverse.dr && d.dc === reverse.dc));
+            const choices = filtered.length > 0 ? filtered : available;
+
+            // Target-based selection with randomness
+            const target = ghostTarget(ghost, idx);
+            let bestDir = choices[0];
+            let bestDist = Infinity;
+
+            choices.forEach(d => {
+                const nr = ghost.row + d.dr;
+                const nc = ghost.col + d.dc;
+                const dist = Math.abs(nr - target.row) + Math.abs(nc - target.col);
+                // Add randomness
+                const noisy = dist + Math.random() * 3;
+                if (noisy < bestDist) {
+                    bestDist = noisy;
+                    bestDir = d;
+                }
+            });
+
+            ghost.dir = bestDir;
+            ghost.row += bestDir.dr;
+            ghost.col += bestDir.dc;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // COLLISION DETECTION
+        // ═══════════════════════════════════════════════════════════════
+        function checkGhostCollisions() {
+            if (!isPoweredUp && isJumping) return; // invincible while jumping
+
+            ghosts.forEach((g, i) => {
+                if (!g.alive) return;
+                if (g.floor !== pacmanFloor) return;
+                if (Math.abs(g.row - pacmanRow) > 1 || Math.abs(g.col - pacmanCol) > 1) return;
+
+                const dx = g.col - pacmanCol;
+                const dy = g.row - pacmanRow;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 0.9) {
+                    if (isPoweredUp) {
+                        // Eat ghost
+                        g.alive = false;
+                        g.mesh.visible = false;
+                        g.respawnTimer = 5.0;
+                        consecutiveGhostEats++;
+                        score += SCORE_GHOST * consecutiveGhostEats;
+                        playBeep(1200, 0.2, 'sawtooth');
+                        updateHUD();
+                    } else if (!gameOver) {
+                        // Pac-Man dies
+                        die();
+                    }
+                }
+            });
+        }
+
+        function die() {
+            lives--;
+            playBeep(200, 0.4, 'sawtooth');
+            updateHUD();
+
+            if (lives <= 0) {
+                gameOver = true;
+                showOverlay('GAME OVER', `Final Score: ${score}`);
+            } else {
+                // Respawn
+                pacmanRow = pacmanSpawn.row;
+                pacmanCol = pacmanSpawn.col;
+                pacmanDir = { dr: 0, dc: 0 };
+                nextDir = { dr: 0, dc: 0 };
+                pacmanFloor = 0;
+                isPoweredUp = false;
+                powerTimer = 0;
+                ghostBlinkTimer = 0;
+                ghostsFlashWhite = false;
+                isJumping = false;
+                ghostFollowTimer = 0;
+                hideGhostWarningRings();
+                consecutiveGhostEats = 0;
+                restoreGhostColors();
+            }
+        }
+
+        function winGame() {
+            gameWon = true;
+            playBeep(880, 0.5);
+            setTimeout(() => {
+                showOverlay('YOU WIN! 🎉', `Score: ${score} · All ${totalDots} dots eaten!`);
+            }, 500);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // HUD
+        // ═══════════════════════════════════════════════════════════════
+        function updateHUD() {
+            document.getElementById('score').textContent = `SCORE: ${score}`;
+            const hearts = [];
+            for (let i = 0; i < lives; i++) hearts.push('❤️');
+            document.getElementById('lives').innerHTML = hearts.join(' ') || '💀';
+            const fill = document.getElementById('power-fill');
+            if (isPoweredUp) {
+                fill.style.width = (powerTimer / POWER_DURATION * 100) + '%';
+            } else {
+                fill.style.width = '0%';
+            }
+            const jumpEl = document.getElementById('jump-indicator');
+            if (isJumping) {
+                jumpEl.textContent = '⬆ JUMPING!';
+                jumpEl.style.color = '#FFD700';
+            } else if (jumpCooldown > 0) {
+                jumpEl.textContent = `Jump cooldown... ${jumpCooldown.toFixed(1)}s`;
+                jumpEl.style.color = '#666688';
+            } else if (pacmanFloor < TOTAL_FLOORS - 1) {
+                const w = gridToWorld(pacmanRow, pacmanCol);
+                const near = checkNearRamp(w.x, w.y);
+                if (near) {
+                    jumpEl.textContent = '⬆ SPACE = Jump up!';
+                    jumpEl.style.color = '#88ccff';
+                } else {
+                    jumpEl.textContent = 'Find a ramp to jump ⬆';
+                    jumpEl.style.color = '#556677';
+                }
+            } else {
+                jumpEl.textContent = `Floor ${pacmanFloor + 1}/${TOTAL_FLOORS} (top)`;
+                jumpEl.style.color = '#88ccff';
+            }
+        }
+
+        function showOverlay(title, sub) {
+            const overlay = document.getElementById('overlay');
+            document.getElementById('overlay-title').textContent = title;
+            document.getElementById('overlay-sub').textContent = sub;
+            overlay.classList.add('active');
+        }
+
+        document.getElementById('overlay-btn').addEventListener('click', resetGame);
+
+        // ═══════════════════════════════════════════════════════════════
+        // CAMERA
+        // ═══════════════════════════════════════════════════════════════
+        function updateCamera() {
+            const w = gridToWorld(pacmanRow, pacmanCol);
+            const floorZ = BASE_Y + pacmanFloor * FLOOR_SPACING;
+            const targetX = w.x;
+            const targetY = w.y;
+            const targetZ = floorZ + 1.2;
+
+            const camDist = 6.5;
+            const camHeight = 8;
+            const angle = -Math.PI / 4; // angled behind
+
+            const camTargetX = targetX + Math.cos(angle) * camDist;
+            const camTargetY = targetY - Math.sin(angle) * camDist;
+            const camTargetZ = targetZ + camHeight;
+
+            camera.position.lerp(
+                new THREE.Vector3(camTargetX, camTargetY, camTargetZ),
+                3 * 0.016
+            );
+            camera.lookAt(targetX, targetY, targetZ);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // PAC-MAN VISUAL UPDATE
+        // ═══════════════════════════════════════════════════════════════
+        function updatePacmanVisual() {
+            const w = gridToWorld(pacmanRow, pacmanCol);
+            const floorZ = BASE_Y + pacmanFloor * FLOOR_SPACING;
+            let z = floorZ + 0.12;
+
+            if (isJumping) {
+                const t = jumpProgress / JUMP_DURATION;
+                z = floorZ + Math.sin(t * Math.PI) * FLOOR_SPACING * 0.9;
+                // Target floor
+                if (t > 0.5) {
+                    z = BASE_Y + (pacmanFloor + 1) * FLOOR_SPACING +
+                        Math.sin(t * Math.PI) * FLOOR_SPACING * 0.9;
+                }
+            }
+
+            // Smooth position
+            const lerpFactor = 12;
+            pacmanGroup.position.x += (w.x - pacmanGroup.position.x) * Math.min(lerpFactor * 0.016, 1);
+            pacmanGroup.position.y += (w.y - pacmanGroup.position.y) * Math.min(lerpFactor * 0.016, 1);
+            pacmanGroup.position.z += (z - pacmanGroup.position.z) * Math.min(lerpFactor * 0.016, 1);
+
+            // Rotate to face direction
+            if (pacmanDir.dr !== 0 || pacmanDir.dc !== 0) {
+                const targetAngle = Math.atan2(-pacmanDir.dr, pacmanDir.dc);
+                let currentAngle = pacmanGroup.rotation.z;
+                // Smooth rotation
+                let diff = targetAngle - currentAngle;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                pacmanGroup.rotation.z += diff * Math.min(15 * 0.016, 1);
+            }
+        }
+
+        function updateGhostVisuals(delta) {
+            ghosts.forEach((g, i) => {
+                if (!g.alive) {
+                    g.mesh.visible = false;
+                    return;
+                }
+                g.mesh.visible = true;
+
+                // Rise animation (scale-in when appearing on a new floor)
+                if (g.riseProgress < 1) {
+                    g.riseProgress = Math.min(1, g.riseProgress + delta / GHOST_RISE_DURATION);
+                    // Ease-out cubic: starts fast, settles gently
+                    const t = 1 - Math.pow(1 - g.riseProgress, 3);
+                    g.mesh.scale.setScalar(t);
+                }
+
+                const w = gridToWorld(g.row, g.col);
+                const z = BASE_Y + g.floor * FLOOR_SPACING + 0.10;
+                const lerp = 8;
+                g.mesh.position.x += (w.x - g.mesh.position.x) * Math.min(lerp * 0.016, 1);
+                g.mesh.position.y += (w.y - g.mesh.position.y) * Math.min(lerp * 0.016, 1);
+                g.mesh.position.z += (z - g.mesh.position.z) * Math.min(lerp * 0.016, 1);
+
+                // Bob animation (skip if still rising, looks weird with scale at 0)
+                if (g.riseProgress >= 1) {
+                    g.mesh.position.z += Math.sin(performance.now() / 1000 * 3 + i) * 0.05;
+                }
+            });
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // GAME LOOP
+        // ═══════════════════════════════════════════════════════════════
+        const clock = new THREE.Clock();
+
+        function update(delta) {
+            if (gameOver || gameWon) return;
+
+            // ── Jump progress ──
+            if (isJumping) {
+                jumpProgress += delta;
+                if (jumpProgress >= JUMP_DURATION) {
+                    const oldFloor = pacmanFloor;
+                    isJumping = false;
+                    pacmanFloor = Math.min(pacmanFloor + 1, TOTAL_FLOORS - 1);
+                    jumpCooldown = JUMP_COOLDOWN_TIME;
+                    // Schedule ghosts on lower floors to follow after a delay
+                    if (oldFloor !== pacmanFloor) {
+                        ghostFollowTimer = GHOST_FOLLOW_DELAY;
+                        showGhostWarningRings(pacmanFloor);
+                    }
+                }
+            }
+            if (jumpCooldown > 0) jumpCooldown -= delta;
+
+            // ── Ghost floor-follow timer (sweeps all ghosts from lower floors) ──
+            if (ghostFollowTimer > 0) {
+                ghostFollowTimer -= delta;
+                updateGhostWarningRings();
+                if (ghostFollowTimer <= 0) {
+                    moveGhostsToCurrentFloor(pacmanFloor);
+                    hideGhostWarningRings();
+                }
+            }
+
+            // ── Power-up timer ──
+            if (isPoweredUp) {
+                powerTimer -= delta;
+                if (powerTimer <= 0) {
+                    isPoweredUp = false;
+                    consecutiveGhostEats = 0;
+                    ghostsFlashWhite = false;
+                    restoreGhostColors();
+                } else if (powerTimer <= POWER_WARNING_START) {
+                    // Flash ghosts: alternate blue/white every 0.2s
+                    ghostBlinkTimer += delta;
+                    if (ghostBlinkTimer >= 0.2) {
+                        ghostBlinkTimer -= 0.2;
+                        ghostsFlashWhite = !ghostsFlashWhite;
+                        ghosts.forEach(g => {
+                            if (g.alive) {
+                                setGhostColor(g, ghostsFlashWhite ? GHOST_FLASH_WHITE : GHOST_FRIGHTENED);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // ── HUD (update every frame for jump indicator, cooldown, etc.) ──
+            updateHUD();
+
+            // ── Input ──
+            const input = getInputDirection();
+            if (input && (input.dr !== 0 || input.dc !== 0)) {
+                nextDir = input;
+            }
+
+            // ── Pac-Man Movement ──
+            moveTimer += delta;
+            if (moveTimer >= MOVE_SPEED && !isJumping) {
+                moveTimer -= MOVE_SPEED;
+
+                // Try to turn in the requested direction first
+                if (nextDir.dr !== 0 || nextDir.dc !== 0) {
+                    const tryRow = pacmanRow + nextDir.dr;
+                    const tryCol = pacmanCol + nextDir.dc;
+                    if (!isWall(tryRow, tryCol)) {
+                        pacmanDir = nextDir;
+                    }
+                }
+
+                // Move in current direction
+                const newRow = pacmanRow + pacmanDir.dr;
+                const newCol = pacmanCol + pacmanDir.dc;
+                if (!isWall(newRow, newCol)) {
+                    pacmanRow = newRow;
+                    pacmanCol = newCol;
+                    collectDot(pacmanRow, pacmanCol);
+                }
+            }
+
+            // ── Ghost Movement ──
+            ghostMoveTimer += delta;
+            while (ghostMoveTimer >= GHOST_MOVE_SPEED) {
+                ghostMoveTimer -= GHOST_MOVE_SPEED;
+                ghosts.forEach((g, i) => moveGhost(g, i));
+            }
+
+            // ── Check collisions ──
+            checkGhostCollisions();
+
+            // ── Visuals ──
+            updatePacmanVisual();
+            updateGhostVisuals(delta);
+            updateCamera();
+
+            // ── Map animations ──
+            updateCatHeadMap(map, delta, performance.now() / 1000);
+
+            // ── Render ──
+            renderer.render(scene, camera);
+        }
+
+        function gameLoop() {
+            requestAnimationFrame(gameLoop);
+            const delta = Math.min(clock.getDelta(), 0.1);
+            update(delta);
+
+            // Star rotation
+            stars.rotation.y += delta * 0.02;
+            stars.rotation.x += delta * 0.008;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // RESIZE
+        // ═══════════════════════════════════════════════════════════════
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ═══════════════════════════════════════════════════════════════
+        // START
+        // ═══════════════════════════════════════════════════════════════
+        resetGame();
+        updateHUD();
+        updateCamera();
+        gameLoop();
+
+        console.log('🐱🎮 Cat-Head Pac-Man ready!');
+        console.log('  Arrow keys / WASD to move');
+        console.log('  SPACE to jump between floors at ramp locations');
+        console.log(`  ${dotsRemaining} dots to collect`);
+        console.log('  Avoid ghosts — or eat them when powered up!');
+    </script>
+</body>
+</html>
