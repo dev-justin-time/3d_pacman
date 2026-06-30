@@ -92,179 +92,24 @@
 }
 </script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as Thumb from './thumb.js';
+import * as Assets from './asset-manager.js';
 
-// ── Model definitions (mirrored from asset-manager.js) ──────────────────
-const PACMAN_MODELS = {
-  classic: { id:'classic', name:'Classic Sphere', description:'Original geometric pac-man', path:null, type:'builtin', emoji:'🟡' },
-  yellow: { id:'yellow', name:'Yellow Pac-Man', path:'assets/models/pacman/yellow', type:'gltf', emoji:'🟡' },
-  robo: { id:'robo', name:'Robot Pac-Man', path:'assets/models/pacman/robo', type:'gltf', emoji:'🤖' },
-  girl: { id:'girl', name:'Girl Pac-Man', path:'assets/models/pacman/girl_pacman_animated/girl_pacman_animated', type:'gltf', emoji:'👧' },
-  pixel: { id:'pixel', name:'Pixel Pac-Man', path:'assets/models/pacman/pac_man_pixels/pixel', type:'gltf', emoji:'👾' },
-  rockin: { id:'rockin', name:"Rock 'n Roll", path:'assets/models/pacman/pac_n_roll/rockinpm', type:'gltf', emoji:'🎸' },
-  pacManExtract: { id:'pacManExtract', name:'Pac-Man (Extract)', path:'assets/models/pacman/pac_man/scene', type:'gltf', emoji:'🟡' },
-  robotPac: { id:'robotPac', name:'Robot Pac-Man v2', path:'assets/models/pacman/robot_pac-man/scene', type:'gltf', emoji:'🤖' }
-};
+// ── Model definitions (from asset-manager.js) ───────────────────────────
+const PACMAN_MODELS = Assets.PACMAN_MODELS;
+const GHOST_MODELS = Assets.GHOST_MODELS;
 
-const GHOST_MODELS = {
-  classic: { id:'classic', name:'Classic Sphere', description:'Original geometric ghost', path:null, type:'builtin', emoji:'👻' },
-  inky: { id:'inky', name:'Inky (Blue)', path:'assets/models/ghost/inky', type:'gltf', emoji:'💙' },
-  blueGhost: { id:'blueGhost', name:'Blue Ghost', path:'assets/models/ghost/blue_ghost/blue', type:'gltf', emoji:'💙' },
-  pinky: { id:'pinky', name:'Pinky Ghost', path:'assets/models/ghost/pinky/scene', type:'gltf', emoji:'💗' },
-  candy: { id:'candy', name:'Candy Monsters', path:'assets/models/ghost/candy_monsters/candy', type:'gltf', emoji:'🍬' }
-};
-
-// ── Thumbnail Renderer ───────────────────────────────────────────────────
-const THUMB_SIZE = 256;
-let thumbRenderer = null;
-let thumbScene = null;
-let thumbCamera = null;
-let thumbLoader = null;
-const thumbnailData = {}; // { modelId: dataURL }
-
-function getThumbRenderer() {
-  if (thumbRenderer) return thumbRenderer;
-  thumbRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  thumbRenderer.setSize(THUMB_SIZE, THUMB_SIZE);
-  thumbRenderer.setClearColor(0x000000, 0);
-  thumbScene = new THREE.Scene();
-  thumbScene.add(new THREE.AmbientLight(0xffffff, 0.8));
-  const d1 = new THREE.DirectionalLight(0xffffff, 0.6);
-  d1.position.set(2, 3, 4);
-  thumbScene.add(d1);
-  const d2 = new THREE.DirectionalLight(0xffffff, 0.3);
-  d2.position.set(-2, -1, -3);
-  thumbScene.add(d2);
-  thumbCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-  thumbLoader = new GLTFLoader();
-  return thumbRenderer;
-}
-
-function disposeThumbScene() {
-  if (!thumbScene) return;
-  const toRemove = [];
-  thumbScene.traverse(obj => {
-    if (obj.isMesh) {
-      toRemove.push(obj);
-      if (obj.geometry) obj.geometry.dispose();
-      if (obj.material) {
-        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        mats.forEach(m => {
-          if (m.map) m.map.dispose();
-          m.dispose();
-        });
-      }
-    }
-  });
-  toRemove.forEach(obj => thumbScene.remove(obj));
-}
-
-function renderModelThumbnail(modelPath) {
-  return new Promise((resolve, reject) => {
-    const renderer = getThumbRenderer();
-
-    // Fetch gltf, patch buffer URI, then load
-    const fullPath = modelPath + '.gltf';
-    fetch(fullPath)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      })
-      .then(gltfText => {
-        const gltfJson = JSON.parse(gltfText);
-        const binFilename = (modelPath + '.bin').split('/').pop();
-        let needsPatch = false;
-        if (gltfJson.buffers) {
-          for (const buf of gltfJson.buffers) {
-            if (buf.uri && buf.uri !== binFilename && buf.uri.endsWith('.bin')) {
-              buf.uri = binFilename;
-              needsPatch = true;
-            }
-          }
-        }
-
-        const normalized = modelPath.replace(/\\/g, '/');
-        const lastSlash = normalized.lastIndexOf('/');
-        const directory = lastSlash >= 0 ? normalized.substring(0, lastSlash + 1) : '';
-
-        if (directory) thumbLoader.setPath(directory);
-
-        const loadFn = (url) => {
-          thumbLoader.load(url, (gltf) => {
-            try {
-              disposeThumbScene();
-              const model = gltf.scene;
-              // Auto-fit
-              const box = new THREE.Box3().setFromObject(model);
-              const size = box.getSize(new THREE.Vector3());
-              const center = box.getCenter(new THREE.Vector3());
-              const maxDim = Math.max(size.x, size.y, size.z);
-              const scale = 2.0 / maxDim;
-              model.scale.multiplyScalar(scale);
-              model.position.sub(center.multiplyScalar(scale));
-
-              thumbScene.add(model);
-              renderer.render(thumbScene, thumbCamera);
-
-              thumbCamera.position.set(0, 0, 4);
-              thumbCamera.lookAt(0, 0, 0);
-              renderer.render(thumbScene, thumbCamera);
-
-              const dataURL = renderer.domElement.toDataURL('image/png');
-              disposeThumbScene();
-              resolve(dataURL);
-            } catch (err) {
-              disposeThumbScene();
-              reject(err);
-            }
-          }, undefined, (err) => {
-            reject(err);
-          });
-        };
-
-        if (needsPatch) {
-          const blob = new Blob([JSON.stringify(gltfJson)], { type: 'application/json' });
-          const blobUrl = URL.createObjectURL(blob);
-          loadFn(blobUrl);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-        } else {
-          loadFn(fullPath);
-        }
-      })
-      .catch(err => {
-        // Fallback: try direct load using just the filename (loader path already set)
-        const filename = fullPath.split('/').pop();
-        thumbLoader.load(filename, (gltf) => {
-          try {
-            disposeThumbScene();
-            const model = gltf.scene;
-            const box = new THREE.Box3().setFromObject(model);
-            const size = box.getSize(new THREE.Vector3());
-            const center = box.getCenter(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const scale = 2.0 / maxDim;
-            model.scale.multiplyScalar(scale);
-            model.position.sub(center.multiplyScalar(scale));
-            thumbScene.add(model);
-            thumbCamera.position.set(0, 0, 4);
-            thumbCamera.lookAt(0, 0, 0);
-            renderer.render(thumbScene, thumbCamera);
-            const dataURL = renderer.domElement.toDataURL('image/png');
-            disposeThumbScene();
-            resolve(dataURL);
-          } catch (e2) {
-            disposeThumbScene();
-            reject(e2);
-          }
-        }, undefined, (e2) => reject(e2));
-      });
-  });
-}
-
-// ── UI Building ──────────────────────────────────────────────────────────
+// ── Thumbnail data store ────────────────────────────────────────────────
+const thumbnailData = {};
 const outputEl = document.getElementById('output');
 const statusEl = document.getElementById('status');
+
+// Emoji fallbacks for built-in models (not in asset-manager.js)
+// Keys match the section names: 'pac' for pacman, 'ghost' for ghost
+const MODEL_EMOJIS = {
+  pac: { classic: '🟡', yellow: '🟡', robo: '🤖', girl: '👧', pixel: '👾', rockin: '🎸', pacManExtract: '🟡', robotPac: '🤖', pinkyPac: '💗', inkyPac: '💙', bluePac: '🔵', candyPac: '🍬', pinkyExtract: '🩷' },
+  ghost: { classic: '👻', inky: '💙', blueGhost: '💙', pinky: '💗', candy: '🍬' }
+};
 
 function buildCard(id, model, section) {
   const card = document.createElement('div');
@@ -272,15 +117,17 @@ function buildCard(id, model, section) {
   card.id = `card-${section}-${id}`;
 
   if (model.type === 'builtin' || !model.path) {
+    const emoji = (MODEL_EMOJIS[section] || {})[id] || '🎮';
     card.innerHTML = `
-      <div class="emoji-placeholder">${model.emoji || '🎮'}</div>
+      <div class="emoji-placeholder">${emoji}</div>
       <div class="name">${model.name}</div>
       <div class="desc">${model.description || 'Built-in'}</div>
       <span class="status-tag done">Built-in</span>
     `;
   } else {
+    const emoji = (MODEL_EMOJIS[section] || {})[id] || '🎮';
     card.innerHTML = `
-      <div class="emoji-placeholder" id="thumb-${section}-${id}">${model.emoji || '🎮'}</div>
+      <div class="emoji-placeholder" id="thumb-${section}-${id}">${emoji}</div>
       <div class="name">${model.name}</div>
       <div class="desc">${model.description || model.path}</div>
       <span class="status-tag pending" id="tag-${section}-${id}">Pending</span>
@@ -327,8 +174,6 @@ async function generateAll() {
   btn.disabled = true;
   btn.textContent = '⏳ Rendering...';
 
-  getThumbRenderer(); // Initialize renderer
-
   const allModels = [
     ...Object.entries(PACMAN_MODELS).map(([id, m]) => ({ id, model: m, section: 'pac' })),
     ...Object.entries(GHOST_MODELS).map(([id, m]) => ({ id, model: m, section: 'ghost' }))
@@ -346,7 +191,7 @@ async function generateAll() {
     if (tagEl) { tagEl.textContent = 'Loading...'; tagEl.className = 'status-tag loading'; }
 
     try {
-      const dataURL = await renderModelThumbnail(model.path);
+      const dataURL = await Thumb.renderModelThumbnail(model.path);
       thumbnailData[`${section}-${id}`] = dataURL;
 
       if (thumbEl) {
@@ -383,14 +228,7 @@ async function generateAll() {
 
 // ── Cleanup ──────────────────────────────────────────────────────────────
 function cleanupAll() {
-  disposeThumbScene();
-  if (thumbRenderer) {
-    thumbRenderer.dispose();
-    thumbRenderer = null;
-    thumbScene = null;
-    thumbCamera = null;
-    thumbLoader = null;
-  }
+  Thumb.dispose();
   statusEl.textContent = '🧹 Renderer cleaned up. Memory freed.';
   document.getElementById('btnCleanup').disabled = true;
 }

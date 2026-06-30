@@ -1,0 +1,12 @@
+{
+  "name": "3d-pacman",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3D Pac-Man browser game",
+  "scripts": {
+    "generate-icon": "node generate-icon.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2"
+  }
+}

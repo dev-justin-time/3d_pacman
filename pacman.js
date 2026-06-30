@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { LEVELS } from './levels.js';
 import { CHALLENGE_LEVELS } from './challenge-levels.js';
 import { FRUITS, FRUIT_SPEED, FRUIT_DURATION, FRUIT_FADE_DURATION, FRUIT_ONCE_PER_LEVEL } from './fruit.js';
 import * as Assets from './asset-manager.js';
 import * as AssetSelector from './asset-selector.js';
+import * as ModelRender from './model_render.js';
 
 // Load fonts into the document via @font-face injection
 Assets.loadFonts();
@@ -290,8 +290,11 @@ let playlistAudioIsFading = false;
 // Current asset selection preferences
 let assetPrefs = Assets.loadPreferences();
 let _currentScene = null;
-let _pacmanModelCache = {};
-let _ghostModelCache = {};
+
+// Cache for classic pac-man geometries & material to speed up level transitions.
+// Cleared when asset preferences change so new models rebuild correctly.
+let _classicAssetCache = null;
+
 let assetSelectorCallback = null;
 
 /**
@@ -1307,243 +1310,94 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         });
     };
 
-    var createPacman = function () {
-        var pacmanGeometries = [];
+    /**
+     * Build (or return cached) classic sphere geometries and material.
+     * Cached in _classicAssetCache for reuse across levels; cleared on pref change.
+     */
+    function _getClassicPacmanAssets() {
+        if (_classicAssetCache) return _classicAssetCache;
+
+        var geometries = [];
         var numFrames = 40;
         for (var i = 0; i < numFrames; i++) {
             let offset = (i / (numFrames - 1)) * Math.PI;
             var geometry = new THREE.SphereGeometry(PACMAN_RADIUS, 16, 16, offset, Math.PI * 2 - offset * 2);
             geometry.rotateX(Math.PI / 2);
-            pacmanGeometries.push(geometry);
+            geometries.push(geometry);
         }
-        var pacmanMaterial = new THREE.MeshPhongMaterial({ color: 'yellow', side: THREE.DoubleSide });
-        
-        // GLTF Loader for 3D models
-        const loader = new GLTFLoader();
-        
-        return function (scene, position) {
-            const modelId = assetPrefs.pacmanModel;
-            const modelDef = Assets.PACMAN_MODELS[modelId];
-            
-            // If using a GLTF model and not classic
-            if (modelDef && modelDef.type === 'gltf' && modelDef.path) {
-                // Return a placeholder, load model async
-                const placeholder = new THREE.Mesh(
-                    new THREE.SphereGeometry(PACMAN_RADIUS, 8, 8),
-                    new THREE.MeshPhongMaterial({ color: 'yellow', transparent: true, opacity: 0.3 })
-                );
-                placeholder.position.copy(position);
-                placeholder.isPacman = true;
-                placeholder.isWrapper = true;
-                placeholder.atePellet = false;
-                placeholder.distanceMoved = 0;
-                placeholder.direction = new THREE.Vector3(-1, 0, 0);
-                placeholder.isModelLoading = true;
-                placeholder.isJumping = false;
-                placeholder.jumpStartTime = 0;
-                placeholder.jumpHeight = JUMP_HEIGHT;
-                placeholder.jumpDuration = JUMP_DURATION;
-                placeholder.jumpCooldown = 0;
-                placeholder.initialJumpRotation = 0;
-                
-                scene.add(placeholder);
-                
-                // Load the actual model asynchronously
-                const fullPath = modelDef.path;
-                Assets.loadSketchfabModel(fullPath, loader, function (gltf) {
-                    const model = gltf.scene;
-                    // Scale model to match existing pacman size
-                    // Rotate from Y-up (Sketchfab) to Z-up (game world)
-                    model.rotation.x = -Math.PI / 2;
-                    // Auto-normalize: scale model to consistent visual size
-                    model.scale.set(1, 1, 1);
-                    const _pBox = new THREE.Box3().setFromObject(model);
-                    const _pSize = new THREE.Vector3();
-                    _pBox.getSize(_pSize);
-                    const _pDiag = Math.sqrt(_pSize.x * _pSize.x + _pSize.y * _pSize.y + _pSize.z * _pSize.z);
-                    if (_pDiag > 0) {
-                        const _pScale = (PACMAN_RADIUS * 2 * Math.sqrt(3)) / _pDiag;
-                        model.scale.set(_pScale, _pScale, _pScale);
-                    } else {
-                        model.scale.set(PACMAN_RADIUS * 2, PACMAN_RADIUS * 2, PACMAN_RADIUS * 2);
-                    }
-                    model.position.copy(placeholder.position);
-                    
-                    // Copy properties
-                    model.isPacman = true;
-                    model.isWrapper = true;
-                    model.atePellet = false;
-                    model.distanceMoved = 0;
-                    model.direction = placeholder.direction;
-                    model.isJumping = false;
-                    model.jumpStartTime = 0;
-                    model.jumpHeight = JUMP_HEIGHT;
-                    model.jumpDuration = JUMP_DURATION;
-                    model.jumpCooldown = 0;
-                    model.initialJumpRotation = 0;
-                    model.isModel = true;
-                    
-                    // Store reference
-                    model.userData.originalScale = PACMAN_RADIUS * 2;
-                    
-                    // Remove placeholder and add model
-                    scene.remove(placeholder);
-                    scene.add(model);
-                }, undefined, function (error) {
-                    console.warn('Failed to load pacman model "' + fullPath + '", using classic sphere', error);
-                    // Revert to classic
-                    placeholder.material.opacity = 1;
-                    placeholder.material.color.setHex(0xffff00);
-                    placeholder.isModelLoading = false;
-                    
-                    // Add geometries for animation
-                    placeholder.geometries = pacmanGeometries;
-                    placeholder.currentFrame = 0;
-                });
-                
-                return placeholder;
-            }
-            
-            // Classic sphere-based pacman (default)
-            var pacman = new THREE.Mesh(pacmanGeometries[0], pacmanMaterial);
-            pacman.geometries = pacmanGeometries;
-            pacman.currentFrame = 0;
-            pacman.isPacman = true;
-            pacman.isWrapper = true;
-            pacman.atePellet = false;
-            pacman.distanceMoved = 0;
-            pacman.position.copy(position);
-            pacman.direction = new THREE.Vector3(-1, 0, 0);
-            
-            pacman.isJumping = false;
-            pacman.jumpStartTime = 0;
-            pacman.jumpHeight = JUMP_HEIGHT;
-            pacman.jumpDuration = JUMP_DURATION;
-            pacman.jumpCooldown = 0;
-            pacman.initialJumpRotation = 0;
-            
-            scene.add(pacman);
-            return pacman;
-        };
-    }();    var createGhost = (() => {
-        let eyeModel = null;
-        let loader = new GLTFLoader();
+        var material = new THREE.MeshPhongMaterial({ color: 'yellow', side: THREE.DoubleSide });
+
+        _classicAssetCache = { geometries, material };
+        return _classicAssetCache;
+    }
+
+    var createPacman = function (scene, position) {
+        const modelId = assetPrefs.pacmanModel;
+        const modelDef = Assets.PACMAN_MODELS[modelId];
+
+        // If using a GLTF model and not classic
+        if (modelDef && modelDef.type === 'gltf' && modelDef.path) {
+            const result = ModelRender.createPacmanModel(scene, position, PACMAN_RADIUS, modelId);
+            // Set jump properties (known only at this scope)
+            result.placeholder.jumpHeight = JUMP_HEIGHT;
+            result.placeholder.jumpDuration = JUMP_DURATION;
+            // On load success, also set jump props on the model
+            result.promise.then(function (model) {
+                model.jumpHeight = JUMP_HEIGHT;
+                model.jumpDuration = JUMP_DURATION;
+            }).catch(function () {
+                // Model load failed — fall back to classic sphere (cached for render speed)
+                var assets = _getClassicPacmanAssets();
+                result.placeholder.geometries = assets.geometries;
+                result.placeholder.currentFrame = 0;
+            });
+            return result.placeholder;
+        }
+
+        // Classic sphere-based pacman (default, cached for render speed)
+        var assets = _getClassicPacmanAssets();
+        var pacman = ModelRender.createClassicPacman(scene, position, PACMAN_RADIUS, assets.geometries, assets.material);
+        pacman.jumpHeight = JUMP_HEIGHT;
+        pacman.jumpDuration = JUMP_DURATION;
+        return pacman;
+    };    var createGhost = (() => {
         let colorIndex = 0;
         let ghostIdCounter = 0;
-
-        let ghostModelLoader = null;
 
         return function (scene, position) {
             const ghostId = ++ghostIdCounter;
             const modelId = assetPrefs.ghostModel;
             const modelDef = Assets.GHOST_MODELS[modelId];
+            const ghostColor = GHOST_COLORS[colorIndex % GHOST_COLORS.length];
 
             // If using a GLTF ghost model
             if (modelDef && modelDef.type === 'gltf' && modelDef.path) {
-                // Create placeholder while model loads
-                const placeholder = new THREE.Mesh(
-                    new THREE.SphereGeometry(GHOST_RADIUS, 8, 8),
-                    new THREE.MeshPhongMaterial({
-                        color: GHOST_COLORS[colorIndex % GHOST_COLORS.length],
-                        transparent: true,
-                        opacity: 0.3
-                    })
+                const result = ModelRender.createGhostModel(
+                    scene, position, GHOST_RADIUS, modelId,
+                    ghostId, ghostColor, colorIndex % GHOST_COLORS.length
                 );
-                placeholder.isGhost = true;
-                placeholder.isWrapper = true;
-                placeholder.isAfraid = false;
-                placeholder.colorIndex = colorIndex % GHOST_COLORS.length;
-                placeholder.position.copy(position);
-                placeholder.direction = new THREE.Vector3(-1, 0, 0);
-                placeholder.isModelLoading = true;
-                placeholder._ghostId = ghostId;
-
-                scene.add(placeholder);
-
-                Assets.loadSketchfabModel(modelDef.path, loader, function (gltf) {
-                    const model = gltf.scene;
-                    // Rotate from Y-up (Sketchfab) to Z-up (game world)
-                    model.rotation.x = -Math.PI / 2;
-                    // Auto-normalize: scale model to consistent visual size
-                    model.scale.set(1, 1, 1);
-                    const _gBox = new THREE.Box3().setFromObject(model);
-                    const _gSize = new THREE.Vector3();
-                    _gBox.getSize(_gSize);
-                    const _gDiag = Math.sqrt(_gSize.x * _gSize.x + _gSize.y * _gSize.y + _gSize.z * _gSize.z);
-                    if (_gDiag > 0) {
-                        const _gScale = (GHOST_RADIUS * 2 * Math.sqrt(3)) / _gDiag;
-                        model.scale.set(_gScale, _gScale, _gScale);
-                    } else {
-                        model.scale.set(GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8, GHOST_RADIUS * 1.8);
-                    }
-                    model.position.copy(placeholder.position);
-                    model._ghostId = ghostId;
-
-                    model.isGhost = true;
-                    model.isWrapper = true;
-                    model.isAfraid = false;
-                    model.colorIndex = placeholder.colorIndex;
-                    model.direction = placeholder.direction;
-                    model.isModel = true;
-
-                    // Apply ghost color tint if material exists
-                    model.traverse(function(child) {
-                        if (child.isMesh && child.material) {
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(mat => {
-                                    // Store original color for fright mode
-                                    mat.userData = mat.userData || {};
-                                    mat.userData.originalColor = mat.color ? mat.color.getHex() : null;
-                                });
-                            } else if (child.material.color) {
-                                child.material.userData = child.material.userData || {};
-                                child.material.userData.originalColor = child.material.color.getHex();
-                            }
-                        }
-                    });
-
-                    scene.add(model);
-
-                    // Play ghost spawn sound
+                // On load success, play sounds
+                result.promise.then(function () {
                     if (audioInitialized && ghostSfxSound) {
                         ghostSfxSound.currentTime = 0;
                         ghostSfxSound.play();
                     }
-                    // Also play the ghost ambient if not already playing
                     if (audioInitialized && ghostAmbientSound && ghostAmbientSound.paused) {
                         ghostAmbientSound.currentTime = 0;
                         ghostAmbientSound.play();
                     }
-                }, undefined, function (error) {
-                    console.warn('Failed to load ghost model "' + modelDef.path + '", using classic sphere', error);
-                    // Revert to classic sphere
-                    placeholder.material.opacity = 0.9;
-                    placeholder.isModelLoading = false;
-                });
+                }).catch(function () {});
 
                 colorIndex++;
-                return placeholder;
+                return result.placeholder;
             }
 
             // Classic sphere-based ghost
-            let ghostGeometry = new THREE.SphereGeometry(GHOST_RADIUS, 16, 16);
-            let color = GHOST_COLORS[colorIndex % GHOST_COLORS.length];
-            let ghostMaterial = new THREE.MeshPhongMaterial({
-                color: color,
-                transparent: true,
-                opacity: 0.9
-            });
-            const ghost = new THREE.Mesh(ghostGeometry, ghostMaterial);
-            ghost.isGhost = true;
-            ghost.isWrapper = true;
-            ghost.isAfraid = false;
-            ghost.colorIndex = colorIndex % GHOST_COLORS.length;
-            ghost.position.copy(position);
-            ghost.direction = new THREE.Vector3(-1, 0, 0);
-            ghost._ghostId = ghostId;
-
+            const ghost = ModelRender.createClassicGhost(
+                scene, position, GHOST_RADIUS, ghostColor,
+                colorIndex % GHOST_COLORS.length, ghostId
+            );
             colorIndex++;
-            scene.add(ghost);
             return ghost;
         };
     })();
@@ -1999,6 +1853,14 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
         setTimeout(transition, minDisplayMs);
     }
 
+    /**
+     * Clear the classic asset cache (geometries + material).
+     * Called when asset preferences change so the classic sphere is rebuilt fresh.
+     */
+    function clearClassicAssetCache() {
+        _classicAssetCache = null;
+    }
+
     var main = function (prefs) {
         if (prefs) {
             assetPrefs = { ...Assets.loadPreferences(), ...prefs };
@@ -2010,6 +1872,10 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 assetPrefs.pacmanModel = 'classic';
                 assetPrefs.ghostModel = 'classic';
             }
+
+            // Asset preferences changed — clear caches so models reload fresh
+            clearClassicAssetCache();
+            ModelRender.clearModelCache();
         }
         initGame();
         createPauseButton();
@@ -2890,6 +2756,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
 
                 mesh.userData = {
                     t0: performance.now() / 1000,
+                    direction: _randomFruitDirection(),
                 };
 
                 scene.add(mesh);
@@ -2899,6 +2766,17 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 fruitTimeout = setTimeout(() => {
                     fadeOutFruit(scene, mesh);
                 }, FRUIT_DURATION * 1000);
+            }
+
+            /** Pick a random cardinal direction for fruit movement (no diagonals). */
+            function _randomFruitDirection() {
+                const dirs = [
+                    new THREE.Vector3( 1,  0, 0),
+                    new THREE.Vector3(-1,  0, 0),
+                    new THREE.Vector3( 0,  1, 0),
+                    new THREE.Vector3( 0, -1, 0),
+                ];
+                return dirs[Math.floor(Math.random() * dirs.length)].clone();
             }
 
             function fadeOutFruit(scene, mesh) {
@@ -2986,8 +2864,29 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
                 fruitInstances.forEach(fruit => {
                     let t = performance.now() / 1000 - (fruit.userData?.t0 ?? 0);
                     fruit.rotation.z = Math.sin(t * 2) * 0.18 + t * 1.8;
-                    fruit.position.z = 0.67 + Math.sin(t * 2.1) * 0.19;
                     fruit.material.opacity = (Math.floor(t / FRUIT_FLASH_INTERVAL) % 2 === 0) ? 1 : 0.7;
+
+                    // Wall-aware maze movement using FRUIT_SPEED (from fruit.js)
+                    let dir = fruit.userData?.direction;
+                    if (!dir) { dir = _randomFruitDirection(); fruit.userData.direction = dir; }
+
+                    let moveDelta = FRUIT_SPEED * delta;
+                    let newX = fruit.position.x + dir.x * moveDelta;
+                    let newY = fruit.position.y + dir.y * moveDelta;
+
+                    // Check if the adjacent grid cell ahead is a wall
+                    let checkX = Math.round(fruit.position.x) + dir.x;
+                    let checkY = Math.round(fruit.position.y) + dir.y;
+                    if (isWall(map, new THREE.Vector3(checkX, checkY, 0))) {
+                        fruit.userData.direction = _randomFruitDirection();
+                    } else {
+                        fruit.position.x = newX;
+                        fruit.position.y = newY;
+                    }
+
+                    // Visual float bob + wrap around maze edges
+                    fruit.position.z = 0.67 + Math.sin(t * 2.1) * 0.19;
+                    wrapObject(fruit, map);
                 });
 
                 if (!fruitSpawnedThisLevel && !fruitWasCollectedThisLevel && FRUITS.length && dotsThisLevel > 0) {

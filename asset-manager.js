@@ -253,9 +253,9 @@ export const SFX = {
   death: { name: 'Death', path: 'assets/audio/sfx/pacman_death.wav' },
   extraPac: { name: 'Extra Pac (Win)', path: 'assets/audio/sfx/pacman_extrapac.wav' },
   intermission: { name: 'Intermission (Pause)', path: 'assets/audio/sfx/pacman_intermission.wav' },
-  ghostSfx: { name: 'Ghost Sound', path: 'assets/audio/sfx/GHOST .mp3' },
+  ghostSfx: { name: 'Ghost Sound', path: 'assets/audio/sfx/GHOST.mp3' },
   intro: { name: 'Intro', path: 'assets/audio/sfx/intro.wav' },
-  pacGhost: { name: 'Pac-Man Ghost', path: 'assets/audio/sfx/PAC MAN GHOST.mp3' },
+  pacGhost: { name: 'Pac-Man Ghost', path: 'assets/audio/sfx/PAC-MAN-GHOST.mp3' },
   powerPellet: { name: 'Power Pellet', path: 'assets/audio/sfx/pac-man-power-pellet.mp3' }
 };
 
@@ -263,13 +263,13 @@ export const SFX = {
 
 export const MUSIC_TRACKS = [
   { id: 'arcade', name: 'Arcade', path: 'assets/audio/music/Arcade.mp3' },
-  { id: 'elevator', name: 'Elevator Music', path: 'assets/audio/music/Elevator Music.mp3' },
-  { id: 'fadingExit', name: 'Fading Exit', path: 'assets/audio/music/Fading Exit.mp3' },
-  { id: 'insertCoin', name: 'Insert Coin', path: 'assets/audio/music/Insert Coin.mp3' },
+  { id: 'elevator', name: 'Elevator Music', path: 'assets/audio/music/Elevator-Music.mp3' },
+  { id: 'fadingExit', name: 'Fading Exit', path: 'assets/audio/music/Fading-Exit.mp3' },
+  { id: 'insertCoin', name: 'Insert Coin', path: 'assets/audio/music/Insert-Coin.mp3' },
   { id: 'pixelheart', name: 'Pixelheart', path: 'assets/audio/music/Pixelheart.mp3' },
-  { id: 'stepUp1', name: 'Step Up V1', path: 'assets/audio/music/STEP UP BY JUSTIN TIME V1.mp3' },
-  { id: 'stepUp2', name: 'Step Up (1)', path: 'assets/audio/music/STEP UP BY JUSTIN TIME 1.mp3' },
-  { id: 'vividVictory', name: 'Vivid Victory', path: 'assets/audio/music/Vivid Victory.mp3' },
+  { id: 'stepUp1', name: 'Step Up V1', path: 'assets/audio/music/STEP-UP-BY-JUSTIN-TIME-V1.mp3' },
+  { id: 'stepUp2', name: 'Step Up (1)', path: 'assets/audio/music/STEP-UP-BY-JUSTIN-TIME-1.mp3' },
+  { id: 'vividVictory', name: 'Vivid Victory', path: 'assets/audio/music/Vivid-Victory.mp3' },
   { id: 'volt', name: 'Volt', path: 'assets/audio/music/Volt.mp3' }
 ];
 
