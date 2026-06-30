@@ -123,7 +123,6 @@ Each model card has a unique gradient background:
 | Candy          | `#FF6E40` → `#FF3D00`                       | 🍬    | `#2a150a`|
 | Pac-Man Extract| `#FFD740` → `#FF6F00`                       | 🎮    | `#2a1a00`|
 | Robot v2       | `#B0BEC5` → `#546E7A`                       | 🦾    | `#151a1e`|
-| Pinky Extract  | `#F48FB1` → `#EC407A`                       | 🩷    | `#2a1020`|
 
 #### Ghost Models
 

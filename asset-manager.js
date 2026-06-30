@@ -139,13 +139,7 @@ export const PACMAN_MODELS = {
     description: 'Robot pac-man variant from character pack',
     type: 'gltf'
   },
-  pinkyExtract: {
-    id: 'pinkyExtract',
-    name: 'Pinky Extract',
-    path: 'assets/models/ghost/pinky/scene',
-    description: 'Pinky ghost model (extracted copy)',
-    type: 'gltf'
-  }
+
 };
 
 export const GHOST_MODELS = {
@@ -386,8 +380,7 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
   // Extract just the filename for loader.load() calls (avoid double-path when loader.path is set)
   const gltfFilename = fullPath.replace(/\\/g, '/').split('/').pop();
 
-  // Save and restore previous loader path to avoid race conditions between concurrent model loads
-  const previousPath = loader._currentPath || loader.path || '';
+
 
   // Helper to set loader path for this model (for texture resolution)
   function setModelPath() {
@@ -423,17 +416,14 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
         // Use loader.parse() with patched JSON — avoids blob URL path-prepending issues
         // and passes `directory` as resourcePath for texture resolution
         loader.parse(JSON.stringify(gltfJson), directory, function(gltf) {
-          loader.setPath(previousPath);
           onLoad(gltf);
         }, function(err) {
           console.warn('Parse load failed, trying direct load:', err);
           // Fallback: direct load with just the filename (loader.path is set for texture resolution)
           setModelPath();
           loader.load(gltfFilename, function(gltf) {
-            loader.setPath(previousPath);
             onLoad(gltf);
           }, onProgress, function(err2) {
-            loader.setPath(previousPath);
             if (onError) onError(err2);
           });
         });
@@ -441,10 +431,8 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
         // No patch needed — set path for texture resolution, load by filename only
         setModelPath();
         loader.load(gltfFilename, function(gltf) {
-          loader.setPath(previousPath);
           onLoad(gltf);
         }, onProgress, function(err) {
-          loader.setPath(previousPath);
           if (onError) onError(err);
         });
       }
@@ -453,10 +441,8 @@ export function loadSketchfabModel(gltfPath, loader, onLoad, onProgress, onError
       console.warn('Fetch-based model loading failed, trying direct load:', err);
       setModelPath();
       loader.load(gltfFilename, function(gltf) {
-        loader.setPath(previousPath);
         onLoad(gltf);
       }, onProgress, function(err2) {
-        loader.setPath(previousPath);
         if (onError) onError(err2);
       });
     });

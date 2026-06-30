@@ -984,7 +984,7 @@ function getExtraLifeThreshold(currentLevelIndex, livesAwardedSoFar) {
             }
         }).catch(() => {});
 
-        let count = 10;
+        let count = 3;
         function tick() {
             if (count > 0) {
                 num.textContent = count;

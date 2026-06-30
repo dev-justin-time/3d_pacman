@@ -32,7 +32,7 @@ const PACMAN_CARD_STYLES = {
   candyPac: { gradient: 'linear-gradient(135deg, #FF6E40 0%, #FF3D00 100%)', emoji: '🍬', bg: '#2a150a' },
   pacManExtract: { gradient: 'linear-gradient(135deg, #FFD740 0%, #FF6F00 100%)', emoji: '🎮', bg: '#2a1a00' },
   robotPac: { gradient: 'linear-gradient(135deg, #B0BEC5 0%, #546E7A 100%)', emoji: '🦾', bg: '#151a1e' },
-  pinkyExtract: { gradient: 'linear-gradient(135deg, #F48FB1 0%, #EC407A 100%)', emoji: '🩷', bg: '#2a1020' },
+
 };
 
 const GHOST_CARD_STYLES = {
@@ -46,7 +46,7 @@ const GHOST_CARD_STYLES = {
 const PACMAN_GROUPS = [
   { id: 'builtin', label: 'Classic / Built-in', ids: ['classic'] },
   { id: 'official', label: '3D Models', ids: ['yellow', 'robo', 'girl', 'pixel', 'rockin', 'pacManExtract', 'robotPac'] },
-  { id: 'crossover', label: 'Crossover Characters', ids: ['pinkyPac', 'inkyPac', 'bluePac', 'candyPac', 'pinkyExtract'] },
+  { id: 'crossover', label: 'Crossover Characters', ids: ['pinkyPac', 'inkyPac', 'bluePac', 'candyPac'] },
 ];
 const GHOST_GROUPS = [
   { id: 'builtin', label: 'Classic / Built-in', ids: ['classic'] },

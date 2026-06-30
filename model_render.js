@@ -212,13 +212,7 @@ const PACMAN_MODEL_CONFIG = {
         scaleMultiplier: 1.0,   /* @tweakable */
         rotation: { x: 0, y: 0, z: 0 }  /* @tweakable */
     },
-    pinkyExtract: {
-        // diag=13.84  size=8.22×8.73×6.91  asp=1.26  ⚠️ off-center
-        description: 'Pinky Extract — pinky ghost as pac-man (copy)',
-        targetRadius: null,
-        scaleMultiplier: 1.0,   /* @tweakable */
-        rotation: { x: 0, y: 0, z: 0 }  /* @tweakable */
-    }
+
 };
 
 // ─── Ghost Model Configurations ────────────────────────────────────────────
